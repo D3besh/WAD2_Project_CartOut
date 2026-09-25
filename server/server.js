@@ -53,5 +53,5 @@ app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 app.use(errorHandler);
 
 connectDB(MONGODB_URI).then(() => {
-  app.listen(PORT, () => console.log(`SideKick running at http://localhost:${PORT}`));
+  app.listen(PORT, () => console.log(`CartOut running at http://localhost:${PORT}`));
 });
