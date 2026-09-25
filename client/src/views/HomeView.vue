@@ -9,7 +9,7 @@
 
 <template>
   <section data-testid="page-home">
-    <h1>Today</h1>
+    <h1>Today's orders!</h1>
     <!-- TODO: build this page -->
   </section>
 </template>
