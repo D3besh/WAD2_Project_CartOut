@@ -4,3 +4,5 @@ client/dist/
 test-results/
 playwright-report/
 .DS_Store
+pnpm-lock.yaml
+pnpm-workspace.yaml
