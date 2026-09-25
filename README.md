@@ -1,4 +1,4 @@
-# SideKick
+# CartOut
 
 Order and materials organiser for home-based businesses.
 IS216 Web Application Development 2, Group G4T6.
