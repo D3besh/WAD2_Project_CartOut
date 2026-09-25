@@ -1,0 +1,10 @@
+{
+  "fields": {
+    "customerName": "Mia",
+    "items": [{ "productName": "Lavender candle", "variant": null, "quantity": 2 }],
+    "price": null,
+    "fulfilmentMethod": "self-collect",
+    "dueAt": null
+  },
+  "missing": ["price", "variant", "dueAt"]
+}

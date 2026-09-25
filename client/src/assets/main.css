@@ -1,0 +1,27 @@
+/*
+  Layout only. The visual design (colours, type, spacing) is yours to decide:
+  styling is 18% of the grade. Put your design tokens in :root.
+*/
+:root {
+  --nav-height: 64px;
+  --sidebar-width: 220px;
+}
+
+.app-main {
+  padding: 1rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Mobile: leave room for the bottom navigation bar */
+.has-nav .app-main {
+  padding-bottom: calc(var(--nav-height) + 1rem);
+}
+
+/* Desktop (Bootstrap md breakpoint and up): sidebar on the left */
+@media (min-width: 768px) {
+  .has-nav .app-main {
+    margin-left: var(--sidebar-width);
+    padding: 1.5rem 2rem;
+  }
+}

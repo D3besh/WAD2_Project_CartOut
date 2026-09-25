@@ -1,0 +1,6 @@
+{
+  "_note": "Sample format only. Replace with real data copied from the data.gov.sg public holidays dataset.",
+  "holidays": [
+    { "date": "2026-12-25", "name": "Christmas Day" }
+  ]
+}
