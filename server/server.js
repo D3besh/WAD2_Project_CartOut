@@ -55,3 +55,4 @@ app.use(errorHandler);
 connectDB(MONGODB_URI).then(() => {
   app.listen(PORT, () => console.log(`CartOut running at http://localhost:${PORT}`));
 });
+
