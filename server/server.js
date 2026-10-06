@@ -18,7 +18,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/sidekick';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 const app = express();
 app.use(express.json());
