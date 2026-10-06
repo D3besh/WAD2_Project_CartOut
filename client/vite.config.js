@@ -6,6 +6,6 @@ export default defineConfig({
   server: {
     port: 5173,
     // During development, send /api requests to the Express server
-    proxy: { '/api': 'http://localhost:3000' },
+    proxy: { '/api': 'http://localhost:3000' }, //change to express port
   },
 });
