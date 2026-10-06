@@ -9,10 +9,12 @@ import OrderDetailView from '../views/OrderDetailView.vue';
 import MaterialsView from '../views/MaterialsView.vue';
 import ProductsView from '../views/ProductsView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
+import LogoutView from '../views/LogoutView.vue';
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
   { path: '/register', name: 'register', component: RegisterView, meta: { public: true } },
+  { path: '/logout', name: 'logout', component: LogoutView },
   { path: '/', name: 'home', component: HomeView },
   { path: '/orders/new', name: 'log-order', component: LogOrderView },
   { path: '/orders', name: 'order-log', component: OrderLogView },
@@ -30,8 +32,19 @@ const router = createRouter({
 // TODO: redirect logged-out users to /login.
 // Call GET /api/auth/me (see services/auth.js); if it returns 401 and the
 // route isn't public, return { name: 'login' }.
-router.beforeEach(async (/* to */) => {
-  return true;
+
+import axios from 'axios';
+
+router.beforeEach(async (to) => {
+  if (to.meta.public) return true;
+
+  try {
+    await axios.get('/api/auth/me');   // 200: logged in
+    return true;
+  } catch (err) {
+    if (err.response?.status === 401) return { name: 'login' };
+    throw err;
+  }
 });
 
 export default router;

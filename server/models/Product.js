@@ -9,19 +9,29 @@ const recipeItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const variantSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    price: { type: Number, min: 0 },
+    extras: [recipeItemSchema],
+  },
+  { _id: false }
+);
+
 // Something the seller sells, e.g. "Lavender candle".
 const productSchema = new mongoose.Schema(
   {
     seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     name: { type: String, required: true, trim: true },
-    variants: [{ type: String, trim: true }], // e.g. ['glass jar', 'tin']
+    variants: [variantSchema],
     price: { type: Number, min: 0 },
     recipe: [recipeItemSchema],
 
     // Optional, only needed if you build the production schedule
-    makingTimeHours: { type: Number, min: 0 },
+    makingTimeMins: { type: Number, min: 0 },
   },
   { timestamps: true }
 );
+
 
 export default mongoose.model('Product', productSchema);
