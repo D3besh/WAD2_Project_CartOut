@@ -6,6 +6,7 @@ const links = [
   { to: '/orders', label: 'Order log' },
   { to: '/materials', label: 'Materials' },
   { to: '/products', label: 'Products' },
+  { to: '/logout', label: 'Logout' }
 ];
 </script>
 

@@ -23,15 +23,31 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/sideki
 const app = express();
 app.use(express.json());
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'dev-only-secret',
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: MONGODB_URI }),
-    cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 7 },
-  })
-);
+// app.use(
+//   session({
+//     secret: process.env.SESSION_SECRET || 'dev-only-secret',
+//     resave: false,
+//     saveUninitialized: false,
+//     store: MongoStore.create({ mongoUrl: MONGODB_URI }),
+//     cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 },
+//   })
+// );
+
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: MONGODB_URI,
+    ttl: 60 * 60 * 24 * 7
+  }),
+  cookie: {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax',
+    // no maxAge here, so the default is a session cookie that ends when the browser closes
+  },
+}));
 
 // Public routes
 app.use('/api/auth', authRoutes);
