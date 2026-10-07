@@ -5,6 +5,7 @@
 //   PUT    /:id    edit a product
 //   DELETE /:id    delete (refused if an order still uses it)
 import { Router } from 'express';
+import { notImplemented } from '../middleware/notImplemented.js';
 import Product from '../models/Product.js';
 import Material from '../models/Material.js';
 import Order from '../models/Order.js';
@@ -12,6 +13,24 @@ import { requireAuth } from '../middleware/requireAuth.js';
 
 const router = Router();
 router.use(requireAuth); // every route below needs a logged-in seller (req.user.id)
+
+// Products and their recipes (which materials, and how much per unit).
+
+// GET /api/products
+// Returns only the logged-in seller's products, sorted by name.
+router.get('/', async (req, res, next) => {
+  try {
+    const products = await Product.find({ seller: req.session.userId }).sort({ name: 1 });
+    res.json(products);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/', notImplemented);
+router.get('/:id', notImplemented);
+router.put('/:id', notImplemented);
+router.delete('/:id', notImplemented); // TODO: what if open orders use this product?
 
 // ---------- helpers (same as routes/materials.js) ----------
 
