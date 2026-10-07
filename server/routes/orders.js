@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { notImplemented } from '../middleware/notImplemented.js';
 import Order from '../models/Order.js';
 import '../models/Product.js';
-import Order from '../models/Order.js';
 import mongoose from 'mongoose';
 
 const router = Router();

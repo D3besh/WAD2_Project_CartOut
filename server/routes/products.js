@@ -7,7 +7,6 @@
 import { Router } from 'express';
 import { notImplemented } from '../middleware/notImplemented.js';
 import Product from '../models/Product.js';
-import Product from '../models/Product.js';
 import Material from '../models/Material.js';
 import Order from '../models/Order.js';
 import { requireAuth } from '../middleware/requireAuth.js';
