@@ -13,9 +13,10 @@ IS216 Web Application Development 2, Group G1T4.
 
 ## Demo login
 
-| Email | Password |
+| Username | Password |
 |---|---|
-| demo@sidekick.test | demo1234 |
+| amycandles | password123 |
+| benbakes | password123 |
 
 ## Tech stack
 
