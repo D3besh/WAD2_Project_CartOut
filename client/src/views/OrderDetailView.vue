@@ -13,16 +13,36 @@ const saving = ref(false);
 const error = ref('');
 const message = ref('');
 
-const itemText = computed(() =>
-  (order.value?.items ?? [])
-    .map((i) => `${i.quantity} ${i.product?.name ?? 'item'}${i.variant ? ` (${i.variant})` : ''}`)
-    .join(', ')
-);
+const itemText = computed(() => {
+  if (!order.value) {
+    return '';
+  }
+
+  const parts = [];
+
+  for (const item of order.value.items) {
+    let name = 'item';
+    if (item.product) {
+      name = item.product.name;
+    }
+
+    let text = item.quantity + ' ' + name;
+    if (item.variant) {
+      text += ' (' + item.variant + ')';
+    }
+
+    parts.push(text);
+  }
+
+  return parts.join(', ');
+});
 
 const generated = computed(() => {
   if (!order.value) return '';
+
   const name = order.value.customerName;
   const how = order.value.fulfilmentMethod === 'delivery' ? 'delivering to you' : 'ready for you to collect';
+
   if (status.value === 'ready') {
     return `Hi ${name}! Your order of ${itemText.value} is ready 🎉 We are ${how}. Thank you for your support!`;
   }
@@ -40,12 +60,13 @@ const shown = computed({
 async function loadOrder() {
   loading.value = true;
   error.value = '';
+  
   try {
-    const { data } = await axios.get(`/api/orders/${route.params.id}`);
-    order.value = data;
-    status.value = data.status;
+    const response = await axios.get(`/api/orders/${route.params.id}`);
+    order.value = response.data;
+    status.value = response.data.status;
   } catch (err) {
-    error.value = err.response?.data?.message || 'Could not load order.';
+    error.value = err.response.data.message || 'Could not load order.';
   } finally {
     loading.value = false;
   }
@@ -57,14 +78,17 @@ async function changeStatus(newStatus) {
   message.value = ''; // use a fresh generated message for the new stage
   saving.value = true;
   error.value = '';
+  
   try {
-    const { data } = await axios.patch(`/api/orders/${route.params.id}/status`, {
+    const response = await axios.patch(`/api/orders/${route.params.id}/status`, {
       status: newStatus,
     });
-    order.value = data.order ?? order.value;
+
+    order.value = response.data.order;
+
   } catch (err) {
     status.value = previous; // undo if saving failed
-    error.value = err.response?.data?.message || 'Could not update status.';
+    error.value = err.response.data.message || 'Could not update status.';
   } finally {
     saving.value = false;
   }

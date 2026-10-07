@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import axios from 'axios';
 import OrderCard from '../components/OrderCard.vue';
 import StageTracker from '../components/StageTracker.vue';
@@ -12,15 +12,21 @@ const stage = ref('in-progress');
 async function fetchOrders() {
   loading.value = true;
   error.value = '';
+
   try {
+
     const response = await axios.get('/api/orders', {
       params: { status: stage.value },
     });
+
     orders.value = response.data;
   } catch (err) {
+
     error.value = err.response.data.message || 'Could not load orders.';
     orders.value = [];
+
   } finally {
+
     loading.value = false;
   }
 }
@@ -28,7 +34,6 @@ async function fetchOrders() {
 onMounted(fetchOrders);
 watch(stage, fetchOrders);
 
-const visible = computed(() => orders.value);
 </script>
 
 <template>
@@ -44,8 +49,8 @@ const visible = computed(() => orders.value);
 
     <div v-if="loading" class="empty-state">Loading orders...</div>
     <div v-else-if="error" class="empty-state text-danger">{{ error }}</div>
-    <TransitionGroup v-else-if="visible.length" name="list" tag="div" class="sk-grid">
-      <OrderCard v-for="o in visible" :key="o._id" :order="o" />
+    <TransitionGroup v-else-if="orders.length" name="list" tag="div" class="sk-grid">
+      <OrderCard v-for="o in orders" :key="o._id" :order="o" />
     </TransitionGroup>
     <div v-else class="empty-state">
       <i class="bi bi-inbox" aria-hidden="true"></i>

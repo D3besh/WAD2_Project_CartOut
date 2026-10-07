@@ -21,17 +21,27 @@ const PAYMENT = {
 };
 
 // "2× Matcha Latte (Oat milk), 1× Matcha Cookies"
-const itemSummary = computed(() =>
-  (props.order.items ?? [])
-    .map((i) => {
-      const name = i.product?.name ?? i.productName ?? 'Item';
-      return `${i.quantity}× ${name}${i.variant ? ` (${i.variant})` : ''}`;
-    })
-    .join(', ')
-);
+const itemSummary = computed(() => {
+  const parts = [];
 
-const isOverdue = computed(
-  () => props.order.status !== 'completed' && new Date(props.order.dueAt) < new Date()
+  for (const item of props.order.items) {
+    let name = 'Item';
+    if (item.product) {
+      name = item.product.name;
+    }
+
+    let text = item.quantity + '× ' + name;
+    if (item.variant) {
+      text += ' (' + item.variant + ')';
+    }
+
+    parts.push(text);
+  }
+
+  return parts.join(', ');
+});
+
+const isOverdue = computed(() => props.order.status !== 'completed' && new Date(props.order.dueAt) < new Date()
 );
 const payment = computed(() => PAYMENT[props.order.paymentStatus] ?? PAYMENT.unpaid);
 </script>
