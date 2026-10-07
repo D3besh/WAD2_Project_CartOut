@@ -1,27 +1,446 @@
-/*
-  Layout only. The visual design (colours, type, spacing) is yours to decide:
-  styling is 18% of the grade. Put your design tokens in :root.
-*/
+/* =========================================================================
+   SideKick global styles
+   -------------------------------------------------------------------------
+   1. Design tokens   – change colours/spacing here, everything follows
+   2. Bootstrap tweaks – make Bootstrap use our colours
+   3. Layout          – page area next to the nav
+   4. Reusable bits   – .sk-card, .page-header, .chip, .empty-state, .skeleton
+   5. Animations      – transitions used by <Transition> / <TransitionGroup>
+   ========================================================================= */
+
+/* ---------- 1. Design tokens ---------- */
 :root {
-  --nav-height: 64px;
-  --sidebar-width: 220px;
+  /* Layout */
+  --nav-height: 68px;
+  --sidebar-width: 236px;
+
+  /* Brand: matcha green */
+  --sk-brand: #557a2b;
+  --sk-brand-dark: #3f5c1f;
+  --sk-brand-soft: #eef3e2;
+
+  /* Neutrals */
+  --sk-bg: #f8f7f2;
+  --sk-surface: #ffffff;
+  --sk-border: #e5e4da;
+  --sk-text: #2b2420;
+  --sk-muted: #7a6e66;
+
+  /* Status colours (always pair with text or an icon, never colour alone) */
+  --sk-ok: #1f7a6d;
+  --sk-ok-soft: #e0f2ef;
+  --sk-warn: #a8650f;
+  --sk-warn-soft: #fdf1dc;
+  --sk-danger: #c0392b;
+  --sk-danger-soft: #fbe8e6;
+
+  --sk-radius: 16px;
+  --sk-radius-sm: 10px;
+  --sk-shadow: 0 1px 2px rgb(43 36 32 / 0.05), 0 6px 16px rgb(43 36 32 / 0.06);
+  --sk-shadow-lift: 0 2px 4px rgb(43 36 32 / 0.06), 0 12px 28px rgb(43 36 32 / 0.1);
+
+  /* ---------- 2. Bootstrap tweaks ---------- */
+  --bs-body-bg: var(--sk-bg);
+  --bs-body-color: var(--sk-text);
+  --bs-secondary-color: var(--sk-muted);
+  --bs-border-color: var(--sk-border);
+  --bs-primary: var(--sk-brand);
+  --bs-primary-rgb: 85, 122, 43;
+  --bs-link-color: var(--sk-brand);
+  --bs-link-color-rgb: 85, 122, 43;
+  --bs-link-hover-color: var(--sk-brand-dark);
+  --bs-border-radius: 10px;
+  --bs-body-font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+.btn-primary {
+  --bs-btn-bg: var(--sk-brand);
+  --bs-btn-border-color: var(--sk-brand);
+  --bs-btn-hover-bg: var(--sk-brand-dark);
+  --bs-btn-hover-border-color: var(--sk-brand-dark);
+  --bs-btn-active-bg: var(--sk-brand-dark);
+  --bs-btn-active-border-color: var(--sk-brand-dark);
+  --bs-btn-disabled-bg: var(--sk-brand);
+  --bs-btn-disabled-border-color: var(--sk-brand);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--sk-brand);
+  --bs-btn-border-color: var(--sk-brand);
+  --bs-btn-hover-bg: var(--sk-brand);
+  --bs-btn-hover-border-color: var(--sk-brand);
+  --bs-btn-active-bg: var(--sk-brand-dark);
+  --bs-btn-active-border-color: var(--sk-brand-dark);
+}
+.btn-light {
+  --bs-btn-bg: var(--sk-surface);
+  --bs-btn-border-color: var(--sk-border);
+  --bs-btn-hover-bg: var(--sk-brand-soft);
+  --bs-btn-hover-border-color: var(--sk-border);
+}
+.btn { font-weight: 600; border-radius: 999px; padding-inline: 1.1rem; }
+.btn-sm { padding-inline: 0.8rem; }
+.btn:active { transform: scale(0.97); }
+
+.form-control,
+.form-select { border-radius: var(--sk-radius-sm); padding: 0.6rem 0.8rem; }
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+  border-color: var(--sk-brand);
+  box-shadow: 0 0 0 0.2rem rgb(85 122 43 / 0.18);
+}
+.form-check-input:checked { background-color: var(--sk-brand); border-color: var(--sk-brand); }
+.form-label { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; }
+.input-group-text { background: var(--sk-bg); color: var(--sk-muted); border-radius: var(--sk-radius-sm); }
+
+body { -webkit-font-smoothing: antialiased; }
+h1, h2, h3, .h1, .h2, .h3 { font-weight: 800; letter-spacing: -0.02em; }
+
+/* ---------- 3. Layout ---------- */
 .app-main {
-  padding: 1rem;
-  max-width: 1100px;
-  margin: 0 auto;
+  min-height: 100vh;
+  padding: 1.25rem 1rem calc(var(--nav-height) + 2rem);
 }
+.app-main > * { max-width: 1120px; margin-inline: auto; }
+.app-main--bare { padding-bottom: 1.25rem; }
 
-/* Mobile: leave room for the bottom navigation bar */
-.has-nav .app-main {
-  padding-bottom: calc(var(--nav-height) + 1rem);
-}
-
-/* Desktop (Bootstrap md breakpoint and up): sidebar on the left */
 @media (min-width: 768px) {
-  .has-nav .app-main {
-    margin-left: var(--sidebar-width);
-    padding: 1.5rem 2rem;
-  }
+  .app-main { padding: 2.25rem 2.5rem 3rem calc(var(--sidebar-width) + 2.5rem); }
+  .app-main--bare { padding-left: 2.5rem; }
 }
+
+/* ---------- 4. Reusable bits ---------- */
+.sk-card {
+  background: var(--sk-surface);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius);
+  box-shadow: var(--sk-shadow);
+  padding: 1.1rem 1.15rem;
+}
+.sk-card--hover { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.sk-card--hover:hover { transform: translateY(-2px); box-shadow: var(--sk-shadow-lift); }
+
+/* Page title row: title on the left, actions on the right (stack on phones) */
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+.page-header h1 { font-size: 1.75rem; margin: 0; }
+.page-header p { color: var(--sk-muted); margin: 0.15rem 0 0; }
+
+/* Responsive card grid */
+.sk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.9rem;
+}
+
+/* Small pill used for filters and tags */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--sk-border);
+  background: var(--sk-surface);
+  color: var(--sk-text);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+button.chip { cursor: pointer; }
+button.chip:hover { border-color: var(--sk-brand); }
+.chip.is-active { background: var(--sk-text); border-color: var(--sk-text); color: #fff; }
+.chip .count {
+  background: var(--sk-danger);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+}
+
+/* Status pill: <span class="status status--danger">Low</span> */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.status--ok { background: var(--sk-ok-soft); color: var(--sk-ok); }
+.status--warn { background: var(--sk-warn-soft); color: var(--sk-warn); }
+.status--danger { background: var(--sk-danger-soft); color: var(--sk-danger); }
+.status--muted { background: var(--sk-bg); color: var(--sk-muted); }
+
+.text-muted-sk { color: var(--sk-muted); }
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--sk-muted);
+}
+.empty-state i { font-size: 2.5rem; display: block; margin-bottom: 0.5rem; color: var(--sk-brand); }
+
+/* Grey shimmering placeholder while data loads */
+.skeleton {
+  border-radius: var(--sk-radius);
+  background: linear-gradient(90deg, #ecebe2 25%, #f6f5ef 50%, #ecebe2 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* ---------- 5. Animations ---------- */
+/* Page change */
+.page-enter-active,
+.page-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.page-enter-from { opacity: 0; transform: translateY(8px); }
+.page-leave-to { opacity: 0; }
+
+/* Lists: <TransitionGroup name="list"> */
+.list-enter-active,
+.list-leave-active { transition: all 0.25s ease; }
+.list-enter-from,
+.list-leave-to { opacity: 0; transform: scale(0.96); }
+.list-move { transition: transform 0.25s ease; }
+
+/* Little "pop" when a number changes: add class .pop with a :key */
+.pop { animation: pop 0.35s ease; }
+@keyframes pop { 40% { transform: scale(1.15); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* =========================================================================
+   SideKick global styles
+   -------------------------------------------------------------------------
+   1. Design tokens   – change colours/spacing here, everything follows
+   2. Bootstrap tweaks – make Bootstrap use our colours
+   3. Layout          – page area next to the nav
+   4. Reusable bits   – .sk-card, .page-header, .chip, .empty-state, .skeleton
+   5. Animations      – transitions used by <Transition> / <TransitionGroup>
+   ========================================================================= */
+
+/* ---------- 1. Design tokens ---------- */
+:root {
+  /* Layout */
+  --nav-height: 68px;
+  --sidebar-width: 236px;
+
+  /* Brand: matcha green */
+  --sk-brand: #557a2b;
+  --sk-brand-dark: #3f5c1f;
+  --sk-brand-soft: #eef3e2;
+
+  /* Neutrals */
+  --sk-bg: #f8f7f2;
+  --sk-surface: #ffffff;
+  --sk-border: #e5e4da;
+  --sk-text: #2b2420;
+  --sk-muted: #7a6e66;
+
+  /* Status colours (always pair with text or an icon, never colour alone) */
+  --sk-ok: #1f7a6d;
+  --sk-ok-soft: #e0f2ef;
+  --sk-warn: #a8650f;
+  --sk-warn-soft: #fdf1dc;
+  --sk-danger: #c0392b;
+  --sk-danger-soft: #fbe8e6;
+
+  --sk-radius: 16px;
+  --sk-radius-sm: 10px;
+  --sk-shadow: 0 1px 2px rgb(43 36 32 / 0.05), 0 6px 16px rgb(43 36 32 / 0.06);
+  --sk-shadow-lift: 0 2px 4px rgb(43 36 32 / 0.06), 0 12px 28px rgb(43 36 32 / 0.1);
+
+  /* ---------- 2. Bootstrap tweaks ---------- */
+  --bs-body-bg: var(--sk-bg);
+  --bs-body-color: var(--sk-text);
+  --bs-secondary-color: var(--sk-muted);
+  --bs-border-color: var(--sk-border);
+  --bs-primary: var(--sk-brand);
+  --bs-primary-rgb: 85, 122, 43;
+  --bs-link-color: var(--sk-brand);
+  --bs-link-color-rgb: 85, 122, 43;
+  --bs-link-hover-color: var(--sk-brand-dark);
+  --bs-border-radius: 10px;
+  --bs-body-font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--sk-brand);
+  --bs-btn-border-color: var(--sk-brand);
+  --bs-btn-hover-bg: var(--sk-brand-dark);
+  --bs-btn-hover-border-color: var(--sk-brand-dark);
+  --bs-btn-active-bg: var(--sk-brand-dark);
+  --bs-btn-active-border-color: var(--sk-brand-dark);
+  --bs-btn-disabled-bg: var(--sk-brand);
+  --bs-btn-disabled-border-color: var(--sk-brand);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--sk-brand);
+  --bs-btn-border-color: var(--sk-brand);
+  --bs-btn-hover-bg: var(--sk-brand);
+  --bs-btn-hover-border-color: var(--sk-brand);
+  --bs-btn-active-bg: var(--sk-brand-dark);
+  --bs-btn-active-border-color: var(--sk-brand-dark);
+}
+.btn-light {
+  --bs-btn-bg: var(--sk-surface);
+  --bs-btn-border-color: var(--sk-border);
+  --bs-btn-hover-bg: var(--sk-brand-soft);
+  --bs-btn-hover-border-color: var(--sk-border);
+}
+.btn { font-weight: 600; border-radius: 999px; padding-inline: 1.1rem; }
+.btn-sm { padding-inline: 0.8rem; }
+.btn:active { transform: scale(0.97); }
+
+.form-control,
+.form-select { border-radius: var(--sk-radius-sm); padding: 0.6rem 0.8rem; }
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+  border-color: var(--sk-brand);
+  box-shadow: 0 0 0 0.2rem rgb(85 122 43 / 0.18);
+}
+.form-check-input:checked { background-color: var(--sk-brand); border-color: var(--sk-brand); }
+.form-label { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; }
+.input-group-text { background: var(--sk-bg); color: var(--sk-muted); border-radius: var(--sk-radius-sm); }
+
+body { -webkit-font-smoothing: antialiased; }
+h1, h2, h3, .h1, .h2, .h3 { font-weight: 800; letter-spacing: -0.02em; }
+
+/* ---------- 3. Layout ---------- */
+.app-main {
+  min-height: 100vh;
+  padding: 1.25rem 1rem calc(var(--nav-height) + 2rem);
+}
+.app-main > * { max-width: 1120px; margin-inline: auto; }
+.app-main--bare { padding-bottom: 1.25rem; }
+
+@media (min-width: 768px) {
+  .app-main { padding: 2.25rem 2.5rem 3rem calc(var(--sidebar-width) + 2.5rem); }
+  .app-main--bare { padding-left: 2.5rem; }
+}
+
+/* ---------- 4. Reusable bits ---------- */
+.sk-card {
+  background: var(--sk-surface);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius);
+  box-shadow: var(--sk-shadow);
+  padding: 1.1rem 1.15rem;
+}
+.sk-card--hover { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.sk-card--hover:hover { transform: translateY(-2px); box-shadow: var(--sk-shadow-lift); }
+
+/* Page title row: title on the left, actions on the right (stack on phones) */
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+.page-header h1 { font-size: 1.75rem; margin: 0; }
+.page-header p { color: var(--sk-muted); margin: 0.15rem 0 0; }
+
+/* Responsive card grid */
+.sk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.9rem;
+}
+
+/* Small pill used for filters and tags */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--sk-border);
+  background: var(--sk-surface);
+  color: var(--sk-text);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+button.chip { cursor: pointer; }
+button.chip:hover { border-color: var(--sk-brand); }
+.chip.is-active { background: var(--sk-text); border-color: var(--sk-text); color: #fff; }
+.chip .count {
+  background: var(--sk-danger);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+}
+
+/* Status pill: <span class="status status--danger">Low</span> */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.status--ok { background: var(--sk-ok-soft); color: var(--sk-ok); }
+.status--warn { background: var(--sk-warn-soft); color: var(--sk-warn); }
+.status--danger { background: var(--sk-danger-soft); color: var(--sk-danger); }
+.status--muted { background: var(--sk-bg); color: var(--sk-muted); }
+
+.text-muted-sk { color: var(--sk-muted); }
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--sk-muted);
+}
+.empty-state i { font-size: 2.5rem; display: block; margin-bottom: 0.5rem; color: var(--sk-brand); }
+
+/* Grey shimmering placeholder while data loads */
+.skeleton {
+  border-radius: var(--sk-radius);
+  background: linear-gradient(90deg, #ecebe2 25%, #f6f5ef 50%, #ecebe2 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* ---------- 5. Animations ---------- */
+/* Page change */
+.page-enter-active,
+.page-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.page-enter-from { opacity: 0; transform: translateY(8px); }
+.page-leave-to { opacity: 0; }
+
+/* Lists: <TransitionGroup name="list"> */
+.list-enter-active,
+.list-leave-active { transition: all 0.25s ease; }
+.list-enter-from,
+.list-leave-to { opacity: 0; transform: scale(0.96); }
+.list-move { transition: transform 0.25s ease; }
+
+/* Little "pop" when a number changes: add class .pop with a :key */
+.pop { animation: pop 0.35s ease; }
+@keyframes pop { 40% { transform: scale(1.15); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
