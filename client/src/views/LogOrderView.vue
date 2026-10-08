@@ -6,6 +6,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { api } from '../services/api.js';
 import { createOrder } from '../services/orders.js';
+import axios from 'axios';
 
 const products = ref([]);
 const productsError = ref('');
@@ -79,6 +80,137 @@ async function saveOrder() {
     saving.value = false;
   }
 }
+
+const filledFields = ref([]);
+const missingFields = ref([]);
+const detectionProblems = ref([]);
+const isProcessing = ref(false);
+
+const autoFillForm = async () => {
+  isProcessing.value = true;
+
+  try {
+    const response = await axios.post('/api/orders/parse', {
+      message: form.rawMessage
+    });
+
+    const data = response.data;
+
+    filledFields.value = [];
+    missingFields.value = [];
+    detectionProblems.value = data.problems ?? [];
+
+    // Customer name
+    if (data.customerName) {
+      form.customerName = data.customerName;
+      filledFields.value.push('Customer Name');
+    } else {
+      missingFields.value.push('Customer Name');
+    }
+
+    // Contact
+    if (data.customerContact) {
+      form.customerContact = data.customerContact;
+      filledFields.value.push('Contact');
+    } else {
+      missingFields.value.push('Contact');
+    }
+
+    // Platform
+    if (data.platform) {
+      form.platform = data.platform;
+      filledFields.value.push('Platform');
+    } else {
+      missingFields.value.push('Platform');
+    }
+
+    // Items
+    if (data.items?.length > 0) {
+      form.items = data.items.map(item => ({
+        product: item.product ?? '',
+        variant: item.variant ?? '',
+        quantity: item.quantity ?? 1
+      }));
+
+      filledFields.value.push('Items');
+
+      // Check variant separately
+      const hasVariant = data.items.some(item => item.variant);
+
+      if (hasVariant) {
+        filledFields.value.push('Variant');
+      } else {
+        missingFields.value.push('Variant');
+      }
+
+      // Check quantity separately
+      const hasQuantity = data.items.some(
+        item => item.quantity != null
+      );
+
+      if (hasQuantity) {
+        filledFields.value.push('Quantity');
+      } else {
+        missingFields.value.push('Quantity');
+      }
+
+    } else {
+      missingFields.value.push('Items');
+      missingFields.value.push('Variant');
+      missingFields.value.push('Quantity');
+    }
+
+    // Payment status
+    if (data.paymentStatus) {
+      form.paymentStatus = data.paymentStatus;
+      filledFields.value.push('Payment Status');
+    } else {
+      missingFields.value.push('Payment Status');
+    }
+
+    // Deposit
+    if (data.depositAmount != null) {
+      form.depositAmount = data.depositAmount;
+      filledFields.value.push('Deposit Amount');
+    } else {
+      missingFields.value.push('Deposit Amount');
+    }
+
+    // Fulfilment method
+    if (data.fulfilmentMethod) {
+      form.fulfilmentMethod = data.fulfilmentMethod;
+      filledFields.value.push('Fulfilment Method');
+    } else {
+      missingFields.value.push('Fulfilment Method');
+    }
+
+    // Delivery address
+    if (data.deliveryAddress) {
+      form.deliveryAddress = data.deliveryAddress;
+      filledFields.value.push('Delivery Address');
+    } else {
+      missingFields.value.push('Delivery Address');
+    }
+
+    // Due date
+    if (data.dueAt) {
+      form.dueAt = data.dueAt;
+      filledFields.value.push('Due Date');
+    } else {
+      missingFields.value.push('Due Date');
+    }
+
+  } catch (error) {
+    console.error('Auto-fill failed:', error);
+
+    filledFields.value = [];
+    missingFields.value = [];
+    detectionProblems.value = ['Unable to detect fields.'];
+  } finally {
+    isProcessing.value = false;
+  }
+};
+
 </script>
 
 <template>
@@ -100,14 +232,14 @@ async function saveOrder() {
         <div class="mb-3">
           <label for="customerName" class="form-label">Name *</label>
           <input id="customerName" v-model="form.customerName" class="form-control"
-                 :class="{ 'is-invalid': isMissing('Customer name') }" />
+            :class="{ 'is-invalid': isMissing('Customer name') }" />
         </div>
 
         <div class="row g-3">
           <div class="col-sm-6">
             <label for="customerContact" class="form-label">Contact</label>
             <input id="customerContact" v-model="form.customerContact" class="form-control"
-                   placeholder="Phone or handle" />
+              placeholder="Phone or handle" />
           </div>
           <div class="col-sm-6">
             <label for="platform" class="form-label">Ordered via</label>
@@ -136,7 +268,7 @@ async function saveOrder() {
           <div class="col-sm-5">
             <label :for="`product-${index}`" class="form-label">Product</label>
             <select :id="`product-${index}`" v-model="item.product" class="form-select"
-                    :class="{ 'is-invalid': !item.product && isMissing('Products and quantities') }">
+              :class="{ 'is-invalid': !item.product && isMissing('Products and quantities') }">
               <option value="" disabled>Choose a product</option>
               <option v-for="p in products" :key="p._id" :value="p._id">{{ p.name ?? p._id }}</option>
             </select>
@@ -150,8 +282,8 @@ async function saveOrder() {
             <input :id="`qty-${index}`" v-model.number="item.quantity" type="number" min="1" class="form-control" />
           </div>
           <div class="col-sm-2">
-            <button type="button" class="btn btn-outline-danger w-100"
-                    :disabled="form.items.length === 1" @click="removeItem(index)">Remove</button>
+            <button type="button" class="btn btn-outline-danger w-100" :disabled="form.items.length === 1"
+              @click="removeItem(index)">Remove</button>
           </div>
         </div>
 
@@ -165,7 +297,7 @@ async function saveOrder() {
           <div class="col-sm-4">
             <label for="price" class="form-label">Total price ($) *</label>
             <input id="price" v-model.number="form.price" type="number" min="0" step="0.01" class="form-control"
-                   :class="{ 'is-invalid': isMissing('Price') }" />
+              :class="{ 'is-invalid': isMissing('Price') }" />
           </div>
           <div class="col-sm-4">
             <label for="paymentStatus" class="form-label">Status</label>
@@ -178,7 +310,7 @@ async function saveOrder() {
           <div v-if="form.paymentStatus === 'deposit'" class="col-sm-4">
             <label for="depositAmount" class="form-label">Deposit ($) *</label>
             <input id="depositAmount" v-model.number="form.depositAmount" type="number" min="0" step="0.01"
-                   class="form-control" :class="{ 'is-invalid': isMissing('Deposit amount') }" />
+              class="form-control" :class="{ 'is-invalid': isMissing('Deposit amount') }" />
           </div>
         </div>
       </fieldset>
@@ -190,7 +322,7 @@ async function saveOrder() {
           <div class="col-sm-6">
             <label for="fulfilmentMethod" class="form-label">Collection or delivery *</label>
             <select id="fulfilmentMethod" v-model="form.fulfilmentMethod" class="form-select"
-                    :class="{ 'is-invalid': isMissing('Collection or delivery') }">
+              :class="{ 'is-invalid': isMissing('Collection or delivery') }">
               <option value="" disabled>Choose one</option>
               <option value="self-collect">Self-collect</option>
               <option value="delivery">Delivery</option>
@@ -199,12 +331,12 @@ async function saveOrder() {
           <div class="col-sm-6">
             <label for="dueAt" class="form-label">Due *</label>
             <input id="dueAt" v-model="form.dueAt" type="datetime-local" class="form-control"
-                   :class="{ 'is-invalid': isMissing('Due date') }" />
+              :class="{ 'is-invalid': isMissing('Due date') }" />
           </div>
           <div v-if="form.fulfilmentMethod === 'delivery'" class="col-12">
             <label for="deliveryAddress" class="form-label">Delivery address *</label>
             <input id="deliveryAddress" v-model="form.deliveryAddress" class="form-control"
-                   :class="{ 'is-invalid': isMissing('Delivery address') }" />
+              :class="{ 'is-invalid': isMissing('Delivery address') }" />
           </div>
         </div>
       </fieldset>
@@ -213,7 +345,63 @@ async function saveOrder() {
       <div class="mb-4">
         <label for="rawMessage" class="form-label">Customer's message (optional)</label>
         <textarea id="rawMessage" v-model="form.rawMessage" rows="3" class="form-control"
-                  placeholder="Paste the original message for reference"></textarea>
+          placeholder="Paste the original message for reference"></textarea>
+      </div>
+
+      <button @click="autoFillForm" class="btn btn-primary" :disabled="form.rawMessage.length === 0 || isProcessing">
+        {{ isProcessing ? 'Processing...' : 'Auto Fill' }}
+      </button>
+
+      <div v-if="isProcessing" class="processing-overlay">
+        <div class="processing-box">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+
+          <h5>Processing order...</h5>
+
+          <p class="text-muted mb-0">
+            Extracting order details. Please be patient. Should not take more than 20s.
+          </p>
+        </div>
+      </div>
+
+      <div v-if="filledFields.length > 0 || missingFields.length > 0" class="mt-3">
+        <div class="alert alert-success">
+          <div class="fw-bold mb-2">
+            ✓ Auto-fill completed
+          </div>
+
+          <div class="fw-bold">Detected:</div>
+
+          <ul class="mb-0">
+            <li v-for="field in filledFields" :key="field">
+              ✓ {{ field }}
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="missingFields.length > 0" class="alert alert-warning">
+          <div class="fw-bold mb-2">
+            Not detected:
+          </div>
+
+          <ul class="mb-0">
+            <li v-for="field in missingFields" :key="field">
+              ○ {{ field }}
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="detectionProblems.length > 0" class="alert alert-danger">
+          <div class="fw-bold mb-2">
+            Needs review:
+          </div>
+
+          <ul class="mb-0">
+            <li v-for="(problem, index) in detectionProblems" :key="index">
+              {{ problem }}
+            </li>
+          </ul>
+        </div>
       </div>
 
       <p v-if="missing.length" class="text-muted small">
@@ -226,3 +414,28 @@ async function saveOrder() {
     </form>
   </section>
 </template>
+
+<style scoped>
+.processing-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  z-index: 9999;
+}
+
+.processing-box {
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  text-align: center;
+  min-width: 280px;
+}
+</style>
