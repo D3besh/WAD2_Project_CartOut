@@ -33,6 +33,20 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+import { parseOrder } from '../services/extraction.js';
+
+router.post('/parse', async (req, res, next) => {
+  try {
+    const { message } = req.body;
+    if (typeof message !== 'string' || !message.trim() || message.length > 5000) {
+      return res.status(400).json({ error: 'message must be a non-empty string under 5000 characters' });
+    }
+    res.json(await parseOrder(message, req.session.userId));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/orders/extract
 // Body: { message }. Returns suggested fields plus a list of missing ones.
 // Uses services/extraction.js.
