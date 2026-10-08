@@ -16,9 +16,6 @@
 // When USE_MOCK_APIS=true, return the contents of tests/mocks/extraction.json
 // so tests are stable and don't use API quota.
 
-export async function extractOrderDetails(/* message, products */) {
-  throw new Error('extractOrderDetails is not implemented yet');
-}
 
 import Fuse from 'fuse.js';
 import Product from '../models/Product.js';
