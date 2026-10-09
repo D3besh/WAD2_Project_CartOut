@@ -75,7 +75,7 @@ const productCards = computed(() => {
         let result = calculateCanMake(fullRecipe(product, variant), materials.value);
         rows.push({
           name: variant.name,
-          price: variant.price || product.price, // empty price = product's price
+          price: variant.price ?? product.price, // empty price = product's price (?? so a $0 variant stays $0)
           canMake: result.canMake,
           limitedBy: result.limitedBy,
           warnings: result.warnings,
@@ -160,7 +160,9 @@ function openEditForm(product) {
 
   let variantsCopy = [];
   for (let v of product.variants) {
-    variantsCopy.push({ name: v.name, price: v.price, extras: copyLines(v.extras) });
+    // Keep _id so the server updates this variant instead of making a new one.
+    // Orders point at variants by _id, so losing it would break old orders.
+    variantsCopy.push({ _id: v._id, name: v.name, price: v.price, extras: copyLines(v.extras) });
   }
 
   form.value = {
@@ -225,6 +227,7 @@ async function saveForm() {
       return;
     }
     cleanVariants.push({
+      _id: v._id, // undefined for a new variant; the server gives it one
       name: v.name,
       price: v.price === '' ? null : v.price, // empty box = same as product price
       extras: cleanLines(v.extras),
@@ -377,20 +380,29 @@ async function deleteProduct() {
             <button class="btn btn-sm btn-outline-primary" @click="addRecipeRow">+ Add material</button>
 
             <!-- ----- Variants ----- -->
-            <h6 class="mt-4">Variants <span class="text-muted small">(optional, e.g. Fresh milk / Oat milk)</span></h6>
+            <h6 class="mt-4">Variants <span class="text-muted small">(optional, e.g. Small, Large, Large + lavender topping)</span></h6>
+            <p class="text-muted small mb-2">
+              Customers pick one variant per item. For a combination, add it as its own variant.
+            </p>
 
-            <div v-for="(variant, vIndex) in form.variants" :key="vIndex" class="border rounded p-3 mb-3 bg-light">
-              <div class="d-flex gap-2 mb-2">
-                <input v-model="variant.name" class="form-control" placeholder="Variant name, e.g. Oat milk" />
-                <input
-                  v-model.number="variant.price"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  class="form-control"
-                  style="max-width: 140px"
-                  placeholder="Same price"
-                />
+            <div v-for="(variant, vIndex) in form.variants" :key="variant._id ?? vIndex" class="border rounded p-3 mb-3 bg-light">
+              <div class="d-flex gap-2 mb-2 align-items-end">
+                <div class="flex-grow-1">
+                  <label :for="`variant-name-${vIndex}`" class="form-label small mb-1">Variant name</label>
+                  <input :id="`variant-name-${vIndex}`" v-model="variant.name" class="form-control" placeholder="e.g. Large" />
+                </div>
+                <div style="max-width: 140px">
+                  <label :for="`variant-price-${vIndex}`" class="form-label small mb-1">Price ($)</label>
+                  <input
+                    :id="`variant-price-${vIndex}`"
+                    v-model.number="variant.price"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    class="form-control"
+                    :placeholder="`Same: ${form.price ?? 0}`"
+                  />
+                </div>
                 <button class="btn btn-outline-danger" @click="removeVariant(vIndex)">Remove</button>
               </div>
 

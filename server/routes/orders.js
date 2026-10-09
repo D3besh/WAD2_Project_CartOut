@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { notImplemented } from '../middleware/notImplemented.js';
 import Order from '../models/Order.js';
-import '../models/Product.js';
+import Product from '../models/Product.js';
 import mongoose from 'mongoose';
 
 const router = Router();
@@ -57,6 +57,47 @@ router.post('/extract', notImplemented);
 // Uses services/feasibility.js.
 router.post('/check', notImplemented);
 
+// Checks the items of a new order and returns either { items } or { error }.
+// Rules:
+//   - the product must exist and belong to this seller
+//   - if the product has variants, one of THEM must be chosen (by its _id)
+//   - if it has no variants, no variant is stored
+// The browser only sends { product, variantId, quantity }. The name and price
+// are looked up here, so they can't be faked from the browser.
+async function checkItems(items, sellerId) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { error: 'Add at least one item' };
+  }
+
+  const result = [];
+  for (const item of items) {
+    if (!mongoose.isValidObjectId(item.product)) {
+      return { error: 'Choose a product for every item' };
+    }
+    const product = await Product.findOne({ _id: item.product, seller: sellerId });
+    if (!product) {
+      return { error: 'One of the products no longer exists' };
+    }
+
+    const line = { product: product._id, quantity: item.quantity };
+
+    if (product.variants.length > 0) {
+      const variant = item.variantId ? product.variants.id(item.variantId) : null;
+      if (!variant) {
+        return { error: `Choose a variant for ${product.name}` };
+      }
+      line.variantId = variant._id;
+      line.variant = variant.name;
+      line.unitPrice = variant.price ?? product.price; // empty variant price = product's price
+    } else {
+      line.unitPrice = product.price;
+    }
+
+    result.push(line);
+  }
+  return { items: result };
+}
+
 // POST /api/orders
 // Creates an order for the logged-in seller.
 //
@@ -92,12 +133,19 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Deposit cannot be more than the price' });
     }
 
+    // Check every item against the seller's own products, and copy the
+    // variant's name and price onto the order (see Order.js).
+    const checked = await checkItems(items, req.session.userId);
+    if (checked.error) {
+      return res.status(400).json({ error: checked.error });
+    }
+
     const order = await Order.create({
       seller: req.session.userId,
       customerName,
       customerContact,
       platform: platform || undefined, // empty string would fail the enum check
-      items,
+      items: checked.items,
       price,
       paymentStatus,
       depositAmount,

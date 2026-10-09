@@ -3,7 +3,7 @@
 // Still TODO (prototype views 2–4), to add on top of this form later:
 //   - "Extract order details" from the pasted message, calling extractOrder()
 //   - run checkOrder() and warn if the order can't be fulfilled
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { api } from '../services/api.js';
 import { createOrder } from '../services/orders.js';
 import axios from 'axios';
@@ -11,11 +11,16 @@ import axios from 'axios';
 const products = ref([]);
 const productsError = ref('');
 
+// One line of the order. variantId is the _id of one of the product's variants.
+function newItem() {
+  return { product: '', variantId: '', quantity: 1 };
+}
+
 const emptyForm = () => ({
   customerName: '',
   customerContact: '',
   platform: '',
-  items: [{ product: '', variant: '', quantity: 1 }],
+  items: [newItem()],
   price: null,
   paymentStatus: 'unpaid',
   depositAmount: 0,
@@ -39,11 +44,58 @@ onMounted(async () => {
 });
 
 function addItem() {
-  form.items.push({ product: '', variant: '', quantity: 1 });
+  form.items.push(newItem());
 }
 
 function removeItem(index) {
   if (form.items.length > 1) form.items.splice(index, 1);
+}
+
+// ---------- variants (from the Products page) ----------
+function findProduct(productId) {
+  return products.value.find((p) => p._id === productId);
+}
+
+// The variants the seller created for this item's product ([] if none)
+function variantsFor(item) {
+  const product = findProduct(item.product);
+  return product?.variants ?? [];
+}
+
+// A different product has different variants, so clear the old choice
+function onProductChange(item) {
+  item.variantId = '';
+}
+
+function variantPlaceholder(item) {
+  if (!item.product) return 'Choose a product first';
+  if (variantsFor(item).length === 0) return 'No variants';
+  return 'Choose a variant';
+}
+
+// Price of one unit: the variant's price, or the product's if the variant has none
+function unitPrice(item) {
+  const product = findProduct(item.product);
+  if (!product) return 0;
+  const variant = variantsFor(item).find((v) => v._id === item.variantId);
+  return variant?.price ?? product.price ?? 0;
+}
+
+// ---------- total price ----------
+// Filled in from the Products page prices. The seller can still type a
+// different total (discount, delivery fee); after that we stop overwriting it.
+const calculatedTotal = computed(() =>
+  form.items.reduce((sum, item) => sum + unitPrice(item) * (item.quantity || 0), 0)
+);
+const priceEditedByHand = ref(false);
+
+watch(calculatedTotal, (total) => {
+  if (!priceEditedByHand.value) form.price = total;
+});
+
+function useCalculatedTotal() {
+  form.price = calculatedTotal.value;
+  priceEditedByHand.value = false;
 }
 
 // Required fields that are still empty, used to mark fields and disable the button
@@ -51,6 +103,7 @@ const missing = computed(() => {
   const list = [];
   if (!form.customerName.trim()) list.push('Customer name');
   if (form.items.some((i) => !i.product || !(i.quantity >= 1))) list.push('Products and quantities');
+  if (form.items.some((i) => variantsFor(i).length > 0 && !i.variantId)) list.push('Variant');
   if (form.price === null || form.price === '' || form.price < 0) list.push('Price');
   if (!form.fulfilmentMethod) list.push('Collection or delivery');
   if (form.fulfilmentMethod === 'delivery' && !form.deliveryAddress.trim()) list.push('Delivery address');
@@ -69,11 +122,18 @@ async function saveOrder() {
   try {
     savedOrder.value = await createOrder({
       ...form,
+      // Only send ids and quantities; the server looks up names and prices itself
+      items: form.items.map((item) => ({
+        product: item.product,
+        variantId: item.variantId || undefined,
+        quantity: item.quantity,
+      })),
       // datetime-local has no timezone; convert in the browser so the seller's local time is kept
       dueAt: new Date(form.dueAt).toISOString(),
       depositAmount: form.paymentStatus === 'unpaid' ? 0 : form.depositAmount,
     });
     Object.assign(form, emptyForm());
+    priceEditedByHand.value = false;
   } catch (err) {
     saveError.value = err.message;
   } finally {
@@ -85,6 +145,24 @@ const filledFields = ref([]);
 const missingFields = ref([]);
 const detectionProblems = ref([]);
 const isProcessing = ref(false);
+
+// Finds the variant whose name matches the text from the message (ignoring
+// capitals and spaces at the ends). Returns its _id, or '' if nothing matches.
+function matchVariant(item, text) {
+  if (!text) return '';
+  const wanted = String(text).trim().toLowerCase();
+  const match = variantsFor(item).find(v => v.name.trim().toLowerCase() === wanted);
+  return match ? match._id : '';
+}
+
+// <input type="datetime-local"> only accepts 'YYYY-MM-DDTHH:mm' in local time.
+// A full ISO date from the server ('2026-10-10T10:00:00.000Z') would show blank.
+function toDateTimeInput(value) {
+  const d = new Date(value);
+  if (isNaN(d)) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 const autoFillForm = async () => {
   isProcessing.value = true;
@@ -126,18 +204,25 @@ const autoFillForm = async () => {
 
     // Items
     if (data.items?.length > 0) {
-      form.items = data.items.map(item => ({
-        product: item.product ?? '',
-        variant: item.variant ?? '',
-        quantity: item.quantity ?? 1
-      }));
+      form.items = data.items.map(item => {
+        const line = {
+          product: item.product ?? '',
+          variantId: '',
+          quantity: item.quantity ?? 1
+        };
+        // The message gives a variant as text ("large"). Only accept it if it
+        // matches one of this product's real variants; otherwise leave it
+        // empty so the seller has to choose.
+        line.variantId = matchVariant(line, item.variant);
+        return line;
+      });
 
       filledFields.value.push('Items');
 
-      // Check variant separately
-      const hasVariant = data.items.some(item => item.variant);
+      // Variant counts as detected only if every item that needs one got a match
+      const variantsOk = form.items.every(i => variantsFor(i).length === 0 || i.variantId);
 
-      if (hasVariant) {
+      if (variantsOk) {
         filledFields.value.push('Variant');
       } else {
         missingFields.value.push('Variant');
@@ -194,7 +279,7 @@ const autoFillForm = async () => {
 
     // Due date
     if (data.dueAt) {
-      form.dueAt = data.dueAt;
+      form.dueAt = toDateTimeInput(data.dueAt);
       filledFields.value.push('Due Date');
     } else {
       missingFields.value.push('Due Date');
@@ -268,14 +353,22 @@ const autoFillForm = async () => {
           <div class="col-sm-5">
             <label :for="`product-${index}`" class="form-label">Product</label>
             <select :id="`product-${index}`" v-model="item.product" class="form-select"
-              :class="{ 'is-invalid': !item.product && isMissing('Products and quantities') }">
+              :class="{ 'is-invalid': !item.product && isMissing('Products and quantities') }"
+              @change="onProductChange(item)">
               <option value="" disabled>Choose a product</option>
               <option v-for="p in products" :key="p._id" :value="p._id">{{ p.name ?? p._id }}</option>
             </select>
           </div>
           <div class="col-sm-3">
             <label :for="`variant-${index}`" class="form-label">Variant</label>
-            <input :id="`variant-${index}`" v-model="item.variant" class="form-control" placeholder="e.g. Large" />
+            <select :id="`variant-${index}`" v-model="item.variantId" class="form-select"
+              :disabled="variantsFor(item).length === 0"
+              :class="{ 'is-invalid': variantsFor(item).length > 0 && !item.variantId && isMissing('Variant') }">
+              <option value="" disabled>{{ variantPlaceholder(item) }}</option>
+              <option v-for="v in variantsFor(item)" :key="v._id" :value="v._id">
+                {{ v.name }} (${{ (v.price ?? findProduct(item.product).price).toFixed(2) }})
+              </option>
+            </select>
           </div>
           <div class="col-sm-2">
             <label :for="`qty-${index}`" class="form-label">Qty</label>
@@ -297,7 +390,14 @@ const autoFillForm = async () => {
           <div class="col-sm-4">
             <label for="price" class="form-label">Total price ($) *</label>
             <input id="price" v-model.number="form.price" type="number" min="0" step="0.01" class="form-control"
-              :class="{ 'is-invalid': isMissing('Price') }" />
+              :class="{ 'is-invalid': isMissing('Price') }" @input="priceEditedByHand = true" />
+            <div class="form-text">
+              <template v-if="priceEditedByHand && form.price !== calculatedTotal">
+                Your prices add up to ${{ calculatedTotal.toFixed(2) }}.
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="useCalculatedTotal">Use that</button>
+              </template>
+              <template v-else>Calculated from your product prices. You can change it.</template>
+            </div>
           </div>
           <div class="col-sm-4">
             <label for="paymentStatus" class="form-label">Status</label>
@@ -348,7 +448,8 @@ const autoFillForm = async () => {
           placeholder="Paste the original message for reference"></textarea>
       </div>
 
-      <button @click="autoFillForm" class="btn btn-primary" :disabled="form.rawMessage.length === 0 || isProcessing">
+      <!-- type="button": without it, a button inside a <form> also submits the form -->
+      <button type="button" @click="autoFillForm" class="btn btn-primary" :disabled="form.rawMessage.length === 0 || isProcessing">
         {{ isProcessing ? 'Processing...' : 'Auto Fill' }}
       </button>
 

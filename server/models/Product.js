@@ -23,8 +23,9 @@ const variantSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     price: { type: Number, min: 0 },        // empty = same as the product's price
     extras: [recipeLineSchema],
-  },
-  { _id: false }
+  }
+  // No { _id: false } here: each variant gets its own _id, so orders can point
+  // at a variant and still find it if the seller renames it later.
 );
 
 const productSchema = new mongoose.Schema(
