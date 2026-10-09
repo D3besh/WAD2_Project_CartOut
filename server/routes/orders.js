@@ -3,6 +3,7 @@ import { notImplemented } from '../middleware/notImplemented.js';
 import Order from '../models/Order.js';
 import '../models/Product.js';
 import mongoose from 'mongoose';
+import { deductMaterials, restoreMaterials, checkOrder } from '../services/inventory.js';
 
 const router = Router();
 
@@ -92,7 +93,7 @@ router.post('/', async (req, res, next) => {
       dueAt,
       rawMessage,
     });
-
+    await deductMaterials(order)
     res.status(201).json(order);
   } catch (err) {
     // Bad input (missing required field, wrong enum, invalid id) → 400 with a readable message
