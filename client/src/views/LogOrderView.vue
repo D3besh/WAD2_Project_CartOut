@@ -103,7 +103,7 @@ const missing = computed(() => {
   const list = [];
   if (!form.customerName.trim()) list.push('Customer name');
   if (form.items.some((i) => !i.product || !(i.quantity >= 1))) list.push('Products and quantities');
-  if (form.items.some((i) => variantsFor(i).length > 0 && !i.variantId)) list.push('Variant');
+  // if (form.items.some((i) => variantsFor(i).length > 0 && !i.variantId)) list.push('Variant');
   if (form.price === null || form.price === '' || form.price < 0) list.push('Price');
   if (!form.fulfilmentMethod) list.push('Collection or delivery');
   if (form.fulfilmentMethod === 'delivery' && !form.deliveryAddress.trim()) list.push('Delivery address');
@@ -203,6 +203,8 @@ const autoFillForm = async () => {
     }
 
     // Items
+    
+    // Items
     if (data.items?.length > 0) {
       form.items = data.items.map(item => {
         const line = {
@@ -210,25 +212,44 @@ const autoFillForm = async () => {
           variantId: '',
           quantity: item.quantity ?? 1
         };
-        // The message gives a variant as text ("large"). Only accept it if it
-        // matches one of this product's real variants; otherwise leave it
-        // empty so the seller has to choose.
+
+        // Match the AI-detected variant name to its MongoDB ID.
         line.variantId = matchVariant(line, item.variant);
+
+        // Only flag a variant if one was specified but couldn't be matched.
+        if (item.variant && !line.variantId) {
+          detectionProblems.value.push(
+            `Could not match variant "${item.variant}" for "${item.matchedName ?? item.requestedName ?? 'this product'}". Please select it manually.`
+          );
+        }
+
         return line;
       });
 
       filledFields.value.push('Items');
 
-      // Variant counts as detected only if every item that needs one got a match
-      const variantsOk = form.items.every(i => variantsFor(i).length === 0 || i.variantId);
+      // Variant is optional.
+      const hasVariant = data.items.some(
+        item => item.variant?.trim()
+      );
 
-      if (variantsOk) {
+      const unmatchedVariant = data.items.some(
+        (item, index) =>
+          item.variant?.trim() &&
+          !form.items[index]?.variantId
+      );
+
+      if (hasVariant && !unmatchedVariant) {
         filledFields.value.push('Variant');
-      } else {
-        missingFields.value.push('Variant');
       }
 
-      // Check quantity separately
+      if (unmatchedVariant) {
+        detectionProblems.value.push(
+          'One or more variants could not be matched. Please review them.'
+        );
+      }
+
+      // Quantity
       const hasQuantity = data.items.some(
         item => item.quantity != null
       );
@@ -241,7 +262,6 @@ const autoFillForm = async () => {
 
     } else {
       missingFields.value.push('Items');
-      missingFields.value.push('Variant');
       missingFields.value.push('Quantity');
     }
 
@@ -270,12 +290,28 @@ const autoFillForm = async () => {
     }
 
     // Delivery address
-    if (data.deliveryAddress) {
-      form.deliveryAddress = data.deliveryAddress;
-      filledFields.value.push('Delivery Address');
+
+    // Delivery address
+    if (data.fulfilmentMethod === 'delivery') {
+      if (data.deliveryAddress) {
+        form.deliveryAddress = data.deliveryAddress;
+        filledFields.value.push('Delivery Address');
+      } else {
+        missingFields.value.push('Delivery Address');
+      }
+    } else if (data.fulfilmentMethod === 'self-collect') {
+      form.deliveryAddress = '';
     } else {
-      missingFields.value.push('Delivery Address');
+      // Fulfilment method is unknown, so don't assume an address
+      // is unnecessary.
+      if (data.deliveryAddress) {
+        form.deliveryAddress = data.deliveryAddress;
+        filledFields.value.push('Delivery Address');
+      } else {
+        missingFields.value.push('Delivery Address');
+      }
     }
+
 
     // Due date
     if (data.dueAt) {
@@ -342,7 +378,7 @@ const autoFillForm = async () => {
 
       <!-- Items -->
       <fieldset class="mb-4">
-        <legend class="h5">Items *</legend>
+        <legend class="h5">Items</legend>
 
         <div v-if="productsError" class="alert alert-warning">{{ productsError }}</div>
         <div v-else-if="!products.length" class="text-muted mb-2">
@@ -351,7 +387,7 @@ const autoFillForm = async () => {
 
         <div v-for="(item, index) in form.items" :key="index" class="row g-2 align-items-end mb-2">
           <div class="col-sm-5">
-            <label :for="`product-${index}`" class="form-label">Product</label>
+            <label :for="`product-${index}`" class="form-label">Product *</label>
             <select :id="`product-${index}`" v-model="item.product" class="form-select"
               :class="{ 'is-invalid': !item.product && isMissing('Products and quantities') }"
               @change="onProductChange(item)">
@@ -371,7 +407,7 @@ const autoFillForm = async () => {
             </select>
           </div>
           <div class="col-sm-2">
-            <label :for="`qty-${index}`" class="form-label">Qty</label>
+            <label :for="`qty-${index}`" class="form-label">Qty *</label>
             <input :id="`qty-${index}`" v-model.number="item.quantity" type="number" min="1" class="form-control" />
           </div>
           <div class="col-sm-2">
@@ -394,7 +430,8 @@ const autoFillForm = async () => {
             <div class="form-text">
               <template v-if="priceEditedByHand && form.price !== calculatedTotal">
                 Your prices add up to ${{ calculatedTotal.toFixed(2) }}.
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="useCalculatedTotal">Use that</button>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="useCalculatedTotal">Use
+                  that</button>
               </template>
               <template v-else>Calculated from your product prices. You can change it.</template>
             </div>
@@ -449,7 +486,8 @@ const autoFillForm = async () => {
       </div>
 
       <!-- type="button": without it, a button inside a <form> also submits the form -->
-      <button type="button" @click="autoFillForm" class="btn btn-primary" :disabled="form.rawMessage.length === 0 || isProcessing">
+      <button type="button" @click="autoFillForm" class="btn btn-primary"
+        :disabled="form.rawMessage.length === 0 || isProcessing">
         {{ isProcessing ? 'Processing...' : 'Auto Fill' }}
       </button>
 

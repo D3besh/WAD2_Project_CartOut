@@ -53,14 +53,19 @@ Return ONLY JSON in this shape:
 Rules: use null when something is not stated and never invent values.
 Do not guess prices. Convert number words to integers ("a dozen" = 12).
 Match variants only when the customer explicitly states one. Never invent a variant.
+Do not include words like "regular" and "normal" as variants.
 Resolve relative dates and times using today's date.
 Examples:
 - "tomorrow" = the day after today's date
 - "next Friday" = the Friday of the following week
 - "this Friday" = the upcoming Friday in the current week
 - "next week" = the corresponding period in the following week
-If a relative date is ambiguous, put it in "unclear". Put anything ambiguous
-(e.g. "same as last time") in "unclear".`;
+If a relative date is ambiguous, put it in "unclear". 
+Extract item-specific special instructions into "notes".
+Use null when no special instructions are stated.
+Do not treat general comments, such as "for my friend", as
+preparation instructions unless they affect how the item should be prepared.
+Put anything ambiguous (e.g. "same as last time") in "unclear".`;
 
 // async function callLLM(message) {
 //   try {
@@ -328,9 +333,32 @@ async function callGroq(message) {
   }
 }
 
+function combineDuplicateItems(items) {
+  const combined = new Map();
+
+  for (const item of items) {
+    // Same product and variant should be combined.
+    const key = [
+      item.product ?? item.name ?? item.requestedName,
+      (item.variant ?? '').trim().toLowerCase(),
+      (item.notes ?? '').trim().toLowerCase()
+    ].join('|');
+
+    if (combined.has(key)) {
+      combined.get(key).quantity += item.quantity ?? 0;
+    } else {
+      combined.set(key, { ...item });
+    }
+  }
+
+  return [...combined.values()];
+}
+
+
 export async function parseOrder(message, sellerId) {
 
   const raw = await callLLM(message);
+  raw.items = combineDuplicateItems(raw.items ?? []);
   const problems = [...(raw.unclear ?? [])];
 
   // Drop values outside the schema's enums instead of letting the save fail later
