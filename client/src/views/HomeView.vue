@@ -8,7 +8,7 @@
 import { ref, computed, onMounted } from "vue";
 import axios from "axios";
 import { fullRecipe, calculateCanMake } from "../utils/capacity.js";
-import OrderCard from '../components/OrderCard.vue';
+import OrderCard from "../components/OrderCard.vue";
 
 const shopName = ref("");
 const loading = ref(true);
@@ -169,6 +169,83 @@ async function loadOrders() {
   }
 }
 
+// colour
+
+const showAppearance = ref(false);
+
+const palettes = [
+  {
+    value: "default",
+    name: "Default",
+    colours: ["#557a2b", "#f8f7f2", "#ffffff"],
+  },
+  {
+    value: "steel",
+    name: "Light Steel",
+    colours: ["#495057", "#e9ecef", "#ffffff"],
+  },
+  {
+    value: "teal",
+    name: "Teal Lemon Frost",
+    colours: ["#007f91", "#ffdc65", "#f4f4f8"],
+  },
+  {
+    value: "flamingo",
+    name: "Fiesta Flamingo",
+    colours: ["#ad1630", "#63cbb5", "#fff0ed"],
+  },
+  {
+    value: "sunrise",
+    name: "Golden Sunrise",
+    colours: ["#79345f", "#f5f76b", "#f2f1e6"],
+  },
+];
+
+const savedPalette = localStorage.getItem("cartoutPalette");
+
+const selectedPalette = ref(
+  palettes.some((palette) => palette.value === savedPalette)
+    ? savedPalette
+    : "default",
+);
+
+const selectedMode = ref(
+  localStorage.getItem("cartoutMode") === "dark" ? "dark" : "light",
+);
+
+function applyAppearance() {
+  const website = document.documentElement;
+
+  website.classList.remove(
+    "light-mode",
+    "dark-mode",
+    "theme-default",
+    "theme-steel",
+    "theme-teal",
+    "theme-flamingo",
+    "theme-sunrise"
+  );
+
+  website.classList.add(selectedMode.value + "-mode");
+  website.classList.add("theme-" + selectedPalette.value);
+
+  localStorage.setItem("cartoutPalette", selectedPalette.value);
+  localStorage.setItem("cartoutMode", selectedMode.value);
+}
+
+function choosePalette(value) {
+  selectedPalette.value = value;
+  applyAppearance();
+}
+
+function resetAppearance() {
+  selectedPalette.value = "default";
+  selectedMode.value = "light";
+  applyAppearance();
+}
+
+onMounted(applyAppearance);
+
 onMounted(loadOrders);
 
 onMounted(loadInventory);
@@ -189,11 +266,7 @@ onMounted(loadShop);
 
     <div v-if="errorMessage" class="alert alert-danger" role="alert">
       {{ errorMessage }}
-      <button
-        type="button"
-        class="btn btn-danger btn-sm"
-        @click="loadShop"
-      >
+      <button type="button" class="btn btn-danger btn-sm" @click="loadShop">
         Retry
       </button>
     </div>
@@ -230,14 +303,11 @@ onMounted(loadShop);
             :key="order._id"
             class="home-order-wrapper"
           >
-              <OrderCard :order="order" />
-            </div>
+            <OrderCard :order="order" />
           </div>
+        </div>
 
-
-        <p v-else class="text-secondary">
-          No outstanding orders due today.
-        </p>
+        <p v-else class="text-secondary">No outstanding orders due today.</p>
 
         <div class="d-flex gap-2 mt-3">
           <RouterLink
@@ -258,7 +328,6 @@ onMounted(loadShop);
       </div>
     </div>
 
-
     <!-- Inventory error -->
     <div v-if="inventoryError" class="alert alert-danger" role="alert">
       {{ inventoryError }}
@@ -273,7 +342,7 @@ onMounted(loadShop);
 
     <div class="row">
       <!-- Running low -->
-      <div class="col-md-6 mb-3">
+      <div class="col-md-6">
         <div class="card h-100">
           <div class="card-body">
             <h5 class="card-title">Running low</h5>
@@ -324,7 +393,7 @@ onMounted(loadShop);
       </div>
 
       <!-- Fewest you can make -->
-      <div class="col-md-6 mb-3">
+      <div class="col-md-6">
         <div class="card h-100">
           <div class="card-body">
             <h5 class="card-title">Fewest you can make</h5>
@@ -364,53 +433,94 @@ onMounted(loadShop);
               </ul>
             </template>
 
-            <RouterLink
-              to="/products"
-              class="text-success d-inline-block mt-3"
-            >
+            <RouterLink to="/products" class="text-success d-inline-block mt-3">
               See all
             </RouterLink>
           </div>
         </div>
       </div>
     </div>
+    <!-- Appearance settings -->
+    <div class="home-appearance mt-3 mb-4">
+      <button
+        type="button"
+        class="home-appearance-toggle"
+        :aria-expanded="showAppearance"
+        aria-controls="appearance-options"
+        @click="showAppearance = !showAppearance"
+      >
+        <span>Appearance settings</span>
+        <span aria-hidden="true">{{ showAppearance ? "−" : "+" }}</span>
+      </button>
+
+      <div
+        v-show="showAppearance"
+        id="appearance-options"
+        class="home-appearance-content"
+      >
+        <p class="home-appearance-description">
+          Choose colours and a display mode for all pages.
+        </p>
+
+        <h2 class="h6 mb-3">Colour palette</h2>
+
+        <div class="row g-3">
+          <div
+            v-for="palette in palettes"
+            :key="palette.value"
+            class="col-12 col-sm-6 col-lg-4"
+          >
+            <button
+              type="button"
+              class="home-palette-option"
+              :class="{ 'is-selected': selectedPalette === palette.value }"
+              :aria-pressed="selectedPalette === palette.value"
+              @click="choosePalette(palette.value)"
+            >
+              <span class="home-palette-preview" aria-hidden="true">
+                <span
+                  v-for="colour in palette.colours"
+                  :key="colour"
+                  class="home-palette-swatch"
+                  :style="{ backgroundColor: colour }"
+                ></span>
+              </span>
+
+              <span class="home-palette-name">
+                {{ palette.name }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <label for="appearance-mode" class="form-label"> Display mode </label>
+
+          <select
+            id="appearance-mode"
+            v-model="selectedMode"
+            class="form-select"
+            @change="applyAppearance"
+          >
+            <option value="light">Light mode</option>
+            <option value="dark">Dark mode</option>
+          </select>
+        </div>
+
+        <p class="home-appearance-description small mt-3">
+          Your preference is saved in this browser.
+        </p>
+
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="resetAppearance"
+        >
+          Reset to default
+        </button>
+      </div>
+    </div>
   </section>
 </template>
 
-<style scoped>
-.home-orders {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.home-order-wrapper {
-  width: fit-content;
-  max-width: 100%;
-}
-
-.home-order-wrapper > :deep(*) {
-  display: block;
-  width: auto;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-.home-order-button {
-  width: auto;
-  margin: 0;
-  white-space: nowrap;
-}
-
-.home-see-all {
-  background-color: #6c757d;
-  border-color: #6c757d;
-  color: white;
-}
-
-.home-see-all:hover {
-  background-color: #5c636a;
-  border-color: #565e64;
-}
-</style>
+<style scoped src="../assets/home.css"></style>
