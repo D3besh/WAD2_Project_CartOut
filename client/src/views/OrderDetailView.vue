@@ -12,6 +12,7 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
 const message = ref('');
+const copied = ref(false);
 
 const itemText = computed(() => {
   if (!order.value) {
@@ -60,7 +61,7 @@ const shown = computed({
 async function loadOrder() {
   loading.value = true;
   error.value = '';
-  
+
   try {
     const response = await axios.get(`/api/orders/${route.params.id}`);
     order.value = response.data;
@@ -78,14 +79,13 @@ async function changeStatus(newStatus) {
   message.value = ''; // use a fresh generated message for the new stage
   saving.value = true;
   error.value = '';
-  
+
   try {
     const response = await axios.patch(`/api/orders/${route.params.id}/status`, {
       status: newStatus,
     });
 
     order.value = response.data.order;
-
   } catch (err) {
     status.value = previous; // undo if saving failed
     error.value = err.response.data.message || 'Could not update status.';
@@ -94,13 +94,30 @@ async function changeStatus(newStatus) {
   }
 }
 
+async function copyMessage() {
+  try {
+    await navigator.clipboard.writeText(shown.value);
+  } catch (err) {
+    // fallback for pages without clipboard access
+    const temp = document.createElement('textarea');
+    temp.value = shown.value;
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand('copy');
+    document.body.removeChild(temp);
+  }
+
+  copied.value = true;
+  setTimeout(() => (copied.value = false), 2000);
+}
+
 onMounted(loadOrder);
 </script>
 
 <template>
   <div style="max-width: 720px">
     <RouterLink to="/orders" class="fw-semibold text-decoration-none">
-      <i class="bi bi-arrow-left" aria-hidden="true"></i> Order log
+      ← Back to Orders
     </RouterLink>
 
     <div v-if="loading" class="empty-state mt-3">Loading order...</div>
@@ -122,6 +139,10 @@ onMounted(loadOrder);
       </section>
 
       <ShareMessage v-model:message="shown" />
+
+      <button type="button" class="btn btn-primary mt-3" @click="copyMessage">
+        {{ copied ? '✓ Copied!' : 'Copy message' }}
+      </button>
     </template>
   </div>
 </template>
