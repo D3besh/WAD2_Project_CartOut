@@ -1,7 +1,7 @@
 // /api/materials
 //
 //   GET    /                 list this seller's materials (+ which products use each)
-//   GET    /shopping-list    low materials with a suggested amount to buy
+//   GET    /forecast         which materials will run low in the next 30 days
 //   POST   /                 add a material
 //   PUT    /:id              edit a material
 //   PATCH  /:id/restock      "Mark as restocked"
@@ -10,6 +10,8 @@ import { Router } from 'express';
 import Material from '../models/Material.js';
 import Product from '../models/Product.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { forecastMaterials } from '../services/forecast.js';
+import { getHolidayDates } from '../services/holidays.js';
 
 const router = Router();
 router.use(requireAuth); // every route below needs a logged-in seller (req.user.id)
@@ -73,6 +75,16 @@ router.get('/', handle(async (req, res) => {
   ]);
   // Merge: add "usedIn" to every material
   res.json(materials.map((m) => ({ ...m.toJSON(), usedIn: [...(usage.get(m.id) ?? [])] })));
+}));
+
+// GET /api/materials/forecast
+// Which materials will run low in the next 30 days, based on past orders.
+// The algorithm is in services/forecast.js.
+// (Must come before the "/:id" routes, or "forecast" would be read as an id.)
+router.get('/forecast', handle(async (req, res) => {
+  const holidays = await getHolidayDates(); // e.g. ["2026-10-20", ...] (or [] if not set up)
+  const result = await forecastMaterials(req.user.id, holidays);
+  res.json(result);
 }));
 
 // GET /api/materials/shopping-list
