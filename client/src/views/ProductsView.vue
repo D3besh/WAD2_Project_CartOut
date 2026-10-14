@@ -10,6 +10,7 @@ import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
 const products = ref([]);         // all products from the server
 const materials = ref([]);        // all materials (needed for recipes and "can make")
 const errorMessage = ref('');
+const infoMessage = ref('');      // blue message, e.g. "... was archived"
 const search = ref('');
 
 // Add / Edit pop-up
@@ -49,8 +50,9 @@ function getErrorText(error) {
 // =====================================================
 
 // For every product, work out how many can be made.
-// A product with variants gets one row PER VARIANT.
-// A product without variants gets one row for the main recipe.
+// Every option a customer can order gets its own row:
+//   - the plain product (main recipe only). Called "Regular" when the product has variants.
+//   - one row PER VARIANT (main recipe + that variant's extras)
 //
 // Each item in this list = { product, rows: [{ name, price, canMake, limitedBy, warnings }] }
 const productCards = computed(() => {
@@ -59,17 +61,18 @@ const productCards = computed(() => {
   for (let product of products.value) {
     let rows = [];
 
-    if (product.variants.length === 0) {
-      // No variants: just the main recipe
-      let result = calculateCanMake(fullRecipe(product, null), materials.value);
-      rows.push({
-        name: '',
-        price: product.price,
-        canMake: result.canMake,
-        limitedBy: result.limitedBy,
-        warnings: result.warnings,
-      });
-    } else {
+    // The plain product: just the main recipe.
+    // No name if there are no variants (the card already shows the product name).
+    let plain = calculateCanMake(fullRecipe(product, null), materials.value);
+    rows.push({
+      name: product.variants.length > 0 ? 'Regular' : '',
+      price: product.price,
+      canMake: plain.canMake,
+      limitedBy: plain.limitedBy,
+      warnings: plain.warnings,
+    });
+
+    if (product.variants.length > 0) {
       // One row per variant: main recipe + that variant's extras
       for (let variant of product.variants) {
         let result = calculateCanMake(fullRecipe(product, variant), materials.value);
@@ -136,6 +139,7 @@ function openAddForm() {
   form.value = {
     name: '',
     price: 0,
+    cost: null,                                   // cost to make one (optional)
     makingTimeMins: null,
     recipe: [{ material: '', amountPerUnit: 0 }], // start with one empty row
     variants: [],                                 // no variants to start with
@@ -162,12 +166,13 @@ function openEditForm(product) {
   for (let v of product.variants) {
     // Keep _id so the server updates this variant instead of making a new one.
     // Orders point at variants by _id, so losing it would break old orders.
-    variantsCopy.push({ _id: v._id, name: v.name, price: v.price, extras: copyLines(v.extras) });
+    variantsCopy.push({ _id: v._id, name: v.name, price: v.price, cost: v.cost ?? null, extras: copyLines(v.extras) });
   }
 
   form.value = {
     name: product.name,
     price: product.price,
+    cost: product.cost ?? null, // older products may not have a cost yet
     makingTimeMins: product.makingTimeMins,
     recipe: copyLines(product.recipe),
     variants: variantsCopy,
@@ -190,7 +195,7 @@ function removeRecipeRow(index) {
 
 // Variants
 function addVariant() {
-  form.value.variants.push({ name: '', price: null, extras: [] });
+  form.value.variants.push({ name: '', price: null, cost: null, extras: [] });
 }
 function removeVariant(index) {
   form.value.variants.splice(index, 1);
@@ -230,6 +235,7 @@ async function saveForm() {
       _id: v._id, // undefined for a new variant; the server gives it one
       name: v.name,
       price: v.price === '' ? null : v.price, // empty box = same as product price
+      cost: v.cost === '' ? null : v.cost,    // empty box = same as product cost
       extras: cleanLines(v.extras),
     });
   }
@@ -237,6 +243,7 @@ async function saveForm() {
   let productData = {
     name: form.value.name,
     price: form.value.price,
+    cost: form.value.cost === '' ? null : form.value.cost, // empty box = no cost entered yet
     makingTimeMins: form.value.makingTimeMins,
     recipe: cleanLines(form.value.recipe),
     variants: cleanVariants,
@@ -264,13 +271,26 @@ async function deleteProduct() {
   }
 
   let url = '/api/products/' + editingId.value;
+  let name = form.value.name;
 
   try {
-    await axios.delete(url);
+    let response = await axios.delete(url);
+
+    // The server archives (hides) the product instead of deleting it
+    // if past (ready / completed) orders use it. It replies { archived: true } then.
+    if (response.data && response.data.archived) {
+      infoMessage.value =
+        name + ' is used in past orders, so it was archived (hidden) instead of deleted. ' +
+        'Old orders will still show it.';
+    } else {
+      infoMessage.value = name + ' was deleted.';
+    }
+
     showForm.value = false;
     await loadData();
   } catch (error) {
-    formError.value = getErrorText(error); // e.g. "This product is in existing orders"
+    // e.g. "... is in 1 in-progress order(s). Complete or cancel them first."
+    formError.value = getErrorText(error);
   }
 }
 </script>
@@ -289,6 +309,12 @@ async function deleteProduct() {
 
     <!-- ===== Error message ===== -->
     <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+
+    <!-- ===== Info message (e.g. after archiving or deleting) ===== -->
+    <div v-if="infoMessage" class="alert alert-info d-flex justify-content-between align-items-center">
+      <span>{{ infoMessage }}</span>
+      <button class="btn-close" @click="infoMessage = ''"></button>
+    </div>
 
     <!-- ===== Warning: products/variants that can't be made ===== -->
     <div v-if="cannotMake.length > 0" class="alert alert-warning">
@@ -357,6 +383,10 @@ async function deleteProduct() {
                 <input v-model.number="form.price" type="number" min="0" step="0.5" class="form-control" />
               </div>
               <div class="col">
+                <label class="form-label">Cost to make ($)</label>
+                <input v-model.number="form.cost" type="number" min="0" step="0.1" class="form-control" placeholder="e.g. 6.50" />
+              </div>
+              <div class="col">
                 <label class="form-label">Time to make (min, optional)</label>
                 <input v-model.number="form.makingTimeMins" type="number" min="0" class="form-control" />
               </div>
@@ -382,7 +412,7 @@ async function deleteProduct() {
             <!-- ----- Variants ----- -->
             <h6 class="mt-4">Variants <span class="text-muted small">(optional, e.g. Small, Large, Large + lavender topping)</span></h6>
             <p class="text-muted small mb-2">
-              Customers pick one variant per item. For a combination, add it as its own variant.
+              Customers can order the regular product or one variant. For a combination, add it as its own variant.
             </p>
 
             <div v-for="(variant, vIndex) in form.variants" :key="variant._id ?? vIndex" class="border rounded p-3 mb-3 bg-light">
@@ -401,6 +431,18 @@ async function deleteProduct() {
                     step="0.5"
                     class="form-control"
                     :placeholder="`Same: ${form.price ?? 0}`"
+                  />
+                </div>
+                <div style="max-width: 140px">
+                  <label :for="`variant-cost-${vIndex}`" class="form-label small mb-1">Cost to make ($)</label>
+                  <input
+                    :id="`variant-cost-${vIndex}`"
+                    v-model.number="variant.cost"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    class="form-control"
+                    :placeholder="`Same: ${form.cost ?? '–'}`"
                   />
                 </div>
                 <button class="btn btn-outline-danger" @click="removeVariant(vIndex)">Remove</button>

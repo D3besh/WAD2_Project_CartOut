@@ -51,8 +51,10 @@ async function findOwned(id, sellerId) {
 
 // Which products use each material? → Map of materialId → [product names]
 // Looks at the base recipe and every variant's extras.
+// Archived products are skipped: they're no longer sold, so they don't show in
+// "Used in" and don't stop the seller from deleting a material.
 async function usageMap(sellerId) {
-  const products = await Product.find({ seller: sellerId });
+  const products = await Product.find({ seller: sellerId, archived: { $ne: true } });
   const usage = new Map();
   for (const p of products) {
     const lines = [...(p.recipe ?? []), ...(p.variants ?? []).flatMap((v) => v.extras ?? [])];
