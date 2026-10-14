@@ -14,6 +14,41 @@ const error = ref('');
 const message = ref('');
 const copied = ref(false);
 
+// payment
+const paymentOptions = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'deposit', label: 'Deposit' },
+  { value: 'paid', label: 'Paid' },
+];
+const paymentChoice = ref('unpaid');
+const depositInput = ref('');
+const savingPayment = ref(false);
+const paymentSaved = ref(false);
+
+// Which buttons are locked (greyed out), based on the saved payment status:
+//   unpaid  -> only Unpaid
+//   deposit -> Unpaid and Deposit
+//   paid    -> all of them
+function isDisabled(value) {
+  if (savingPayment.value) return true;
+
+  const saved = order.value?.paymentStatus || 'unpaid';
+
+  if (saved === 'paid') return true;
+  if (saved === 'deposit') return value === 'unpaid' || value === 'deposit';
+  return value === 'unpaid';
+}
+
+// the deposit box only shows when switching to deposit from unpaid
+const showDepositBox = computed(
+  () => paymentChoice.value === 'deposit' && order.value?.paymentStatus !== 'deposit'
+);
+
+const balance = computed(() => {
+  if (!order.value) return 0;
+  return Math.max(order.value.price - (order.value.depositAmount || 0), 0);
+});
+
 const itemText = computed(() => {
   if (!order.value) {
     return '';
@@ -66,8 +101,10 @@ async function loadOrder() {
     const response = await axios.get(`/api/orders/${route.params.id}`);
     order.value = response.data;
     status.value = response.data.status;
+    paymentChoice.value = response.data.paymentStatus || 'unpaid';
+    depositInput.value = response.data.depositAmount || '';
   } catch (err) {
-    error.value = err.response.data.message || 'Could not load order.';
+    error.value = err.response?.data?.message || 'Could not load order.';
   } finally {
     loading.value = false;
   }
@@ -88,9 +125,45 @@ async function changeStatus(newStatus) {
     order.value = response.data.order;
   } catch (err) {
     status.value = previous; // undo if saving failed
-    error.value = err.response.data.message || 'Could not update status.';
+    error.value = err.response?.data?.message || 'Could not update status.';
   } finally {
     saving.value = false;
+  }
+}
+
+// Paid saves straight away. Deposit waits until Save is pressed.
+function choosePayment(value) {
+  if (isDisabled(value)) return;
+
+  paymentChoice.value = value;
+  error.value = '';
+  if (value !== 'deposit') {
+    savePayment();
+  }
+}
+
+async function savePayment() {
+  savingPayment.value = true;
+  paymentSaved.value = false;
+  error.value = '';
+
+  try {
+    const response = await axios.patch(`/api/orders/${route.params.id}/payment`, {
+      paymentStatus: paymentChoice.value,
+      depositAmount: Number(depositInput.value) || 0,
+    });
+
+    order.value = response.data.order;
+    paymentChoice.value = response.data.order.paymentStatus;
+    depositInput.value = response.data.order.depositAmount || '';
+
+    paymentSaved.value = true;
+    setTimeout(() => (paymentSaved.value = false), 2000);
+  } catch (err) {
+    paymentChoice.value = order.value.paymentStatus || 'unpaid'; // undo if saving failed
+    error.value = err.response?.data?.message || 'Could not update payment.';
+  } finally {
+    savingPayment.value = false;
   }
 }
 
@@ -98,7 +171,6 @@ async function copyMessage() {
   try {
     await navigator.clipboard.writeText(shown.value);
   } catch (err) {
-    // fallback for pages without clipboard access
     const temp = document.createElement('textarea');
     temp.value = shown.value;
     document.body.appendChild(temp);
@@ -138,6 +210,67 @@ onMounted(loadOrder);
         <StageTracker :model-value="status" @update:model-value="changeStatus" />
       </section>
 
+      <section class="sk-card mb-3">
+        <h2 class="h6 mb-3">
+          Payment
+          <small v-if="savingPayment" class="text-muted">saving...</small>
+          <small v-else-if="paymentSaved" class="text-muted">✓ saved</small>
+        </h2>
+
+        <div class="d-flex flex-wrap gap-2">
+          <button
+            v-for="opt in paymentOptions"
+            :key="opt.value"
+            type="button"
+            class="btn btn-sm"
+            :class="
+              isDisabled(opt.value)
+                ? 'is-locked'
+                : paymentChoice === opt.value
+                  ? 'btn-primary'
+                  : 'btn-outline-primary'
+            "
+            :disabled="isDisabled(opt.value)"
+            :aria-pressed="paymentChoice === opt.value"
+            @click="choosePayment(opt.value)"
+          >
+            <span v-if="paymentChoice === opt.value">✓ </span>{{ opt.label }}
+          </button>
+        </div>
+
+        <p v-if="order.depositAmount > 0" class="text-muted-sk small mt-3 mb-0">
+          Deposit on record: ${{ Number(order.depositAmount).toFixed(2) }}
+          <template v-if="order.paymentStatus === 'deposit'">
+            · Balance left to pay: ${{ balance.toFixed(2) }}
+          </template>
+        </p>
+
+        <div v-if="showDepositBox" class="mt-3">
+          <label class="form-label" for="depositAmount">Deposit amount</label>
+          <div class="d-flex gap-2" style="max-width: 280px">
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input
+                id="depositAmount"
+                v-model="depositInput"
+                type="number"
+                min="0"
+                step="0.01"
+                class="form-control"
+              />
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="savingPayment"
+              @click="savePayment"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </section>
+
       <ShareMessage v-model:message="shown" />
 
       <button type="button" class="btn btn-primary mt-3" @click="copyMessage">
@@ -146,3 +279,14 @@ onMounted(loadOrder);
     </template>
   </div>
 </template>
+
+<style scoped>
+.btn.is-locked,
+.btn.is-locked:disabled {
+  background: #ecebe2;
+  border: 1px solid var(--sk-border);
+  color: var(--sk-muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+</style>

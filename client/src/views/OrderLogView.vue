@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import OrderCard from '../components/OrderCard.vue';
 import StageTracker from '../components/StageTracker.vue';
+import FloatingAddButton from '../components/FloatingAddButton.vue';
 
 const orders = ref([]);
 const loading = ref(false);
@@ -112,6 +113,8 @@ watch(stage, fetchOrders);
     <div v-else class="empty-state">
       No orders here.
     </div>
+
+    <FloatingAddButton />
   </div>
 </template>
 

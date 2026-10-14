@@ -204,6 +204,45 @@ router.patch('/:id/status', async (req, res, next) => {
   }
 });
 
+// PATCH /api/orders/:id/payment
+// Body: { paymentStatus, depositAmount? }
+// depositAmount is only changed when the new status is 'deposit'.
+// It is never reset, so unpaid -> paid keeps the deposit on record.
+router.patch('/:id/payment', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order id.' });
+    }
+
+    const { paymentStatus, depositAmount } = req.body;
+    if (!['unpaid', 'deposit', 'paid'].includes(paymentStatus)) {
+      return res.status(400).json({ message: 'Invalid payment status.' });
+    }
+
+    const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId });
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+    if (paymentStatus === 'deposit') {
+      const amount = Number(depositAmount);
+      if (!(amount > 0)) {
+        return res.status(400).json({ message: 'Enter the deposit amount.' });
+      }
+      if (amount > order.price) {
+        return res.status(400).json({ message: 'Deposit cannot be more than the price.' });
+      }
+      order.depositAmount = amount;
+    }
+
+    order.paymentStatus = paymentStatus;
+    await order.save();
+    await order.populate('items.product');
+
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/orders/:id
 // Restore materials if they were deducted (see services/inventory.js).
 router.delete('/:id', notImplemented);
