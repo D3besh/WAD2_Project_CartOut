@@ -1,4 +1,4 @@
-// run using node seed/seed2.js or npm run seed
+// run using node seed/seed2.js
 //
 // Seeds two sellers (Amy, Ben), their materials and products, a few recent
 // hand-written orders, and 12 weeks of PAST orders so the forecast has history to learn from.
