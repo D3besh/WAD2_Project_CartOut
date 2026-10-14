@@ -34,6 +34,9 @@ const restockError = ref('');
 // Shopping list pop-up
 const showShoppingList = ref(false);
 
+// Forecast: which materials will run low in the next 30 days (from the server)
+const forecast = ref(null);       // null = not loaded yet
+
 // =====================================================
 // 2. LOAD MATERIALS FROM THE SERVER
 // =====================================================
@@ -48,9 +51,28 @@ async function loadMaterials() {
   }
 }
 
+// Load the 30-day forecast
+async function loadForecast() {
+  let url = '/api/materials/forecast';
+
+  try {
+    let response = await axios.get(url);
+    forecast.value = response.data;
+  } catch (error) {
+    // The forecast is extra information, so if it fails the page still works
+    console.error('Forecast failed:', getErrorText(error));
+  }
+}
+
+// Load both again (after anything that changes stock)
+async function reloadAll() {
+  await loadMaterials();
+  await loadForecast();
+}
+
 // Run once when the page opens
 onMounted(() => {
-  loadMaterials();
+  reloadAll();
 });
 
 // Our server sends a friendly message (e.g. "Remove it from these products first").
@@ -86,6 +108,31 @@ const visibleMaterials = computed(() => {
 
   return list;
 });
+
+// Materials the forecast says will run low or run out in the next 30 days,
+// soonest first
+const forecastAlerts = computed(() => {
+  if (forecast.value === null) {
+    return [];
+  }
+  let list = forecast.value.materials.filter((f) => f.runsLowOn !== null || f.runsOutOn !== null);
+  return list.sort((a, b) => (a.runsLowOn || a.runsOutOn).localeCompare(b.runsLowOn || b.runsOutOn));
+});
+
+// The forecast for one material (used inside each card), or null
+function forecastFor(materialId) {
+  if (forecast.value === null) {
+    return null;
+  }
+  let found = forecast.value.materials.find((f) => f.id === materialId);
+  return found || null;
+}
+
+// "2026-10-18" → "Sun, 18 Oct"
+function formatDay(key) {
+  let date = new Date(key + 'T00:00:00');
+  return date.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
 // =====================================================
 // 4. ADD / EDIT / DELETE
@@ -138,7 +185,7 @@ async function saveForm() {
     }
 
     showForm.value = false;
-    await loadMaterials(); // refresh the list
+    await reloadAll(); // refresh the list and forecast
   } catch (error) {
     formError.value = getErrorText(error);
   }
@@ -154,7 +201,7 @@ async function deleteMaterial() {
   try {
     await axios.delete(url);
     showForm.value = false;
-    await loadMaterials();
+    await reloadAll();
   } catch (error) {
     formError.value = getErrorText(error);
   }
@@ -172,7 +219,7 @@ async function markRestocked(material) {
 
     try {
       await axios.patch(url, { level: 'high' });
-      await loadMaterials();
+      await reloadAll();
     } catch (error) {
       errorMessage.value = getErrorText(error);
     }
@@ -195,7 +242,7 @@ async function saveRestock() {
   try {
     await axios.patch(url, { amount: restockAmount.value });
     restockTarget.value = null; // close the pop-up
-    await loadMaterials();
+    await reloadAll();
   } catch (error) {
     restockError.value = getErrorText(error);
   }
@@ -222,6 +269,28 @@ async function saveRestock() {
       <span>🛒 <strong>{{ lowMaterials.length }}</strong> material(s) running low</span>
       <button class="btn btn-sm btn-dark" @click="showShoppingList = true">View shopping list</button>
     </div>
+
+    <!-- ===== Forecast: materials that will run low in the next 30 days ===== -->
+    <div v-if="forecastAlerts.length > 0" class="alert alert-info">
+      <strong>📅 Coming up in the next {{ forecast.forecastDays }} days</strong>
+      <ul class="mb-0 mt-2">
+        <li v-for="f in forecastAlerts" :key="f.id">
+          <strong>{{ f.name }}</strong>
+          <span v-if="f.runsLowOn"> is likely to drop below {{ f.lowStockThreshold }} {{ f.unit }} on <strong>{{ formatDay(f.runsLowOn) }}</strong></span>
+          <span v-if="f.runsLowOn && f.runsOutOn"> and</span>
+          <span v-if="f.runsOutOn"> may run out by <strong>{{ formatDay(f.runsOutOn) }}</strong></span>.
+          <span v-if="f.isSpike">
+            {{ f.busiestDay }}s are your busiest day (about {{ f.spikeRatio }}× a normal day).
+          </span>
+          Buy about {{ f.suggestedBuy }} {{ f.unit }} to last {{ forecast.forecastDays }} days.
+        </li>
+      </ul>
+    </div>
+
+    <!-- No order history yet = nothing to learn from -->
+    <p v-if="forecast !== null && forecast.historyOrderCount === 0" class="text-muted small">
+      📅 Forecast starts working once you have some past orders.
+    </p>
 
     <!-- ===== Filter and search ===== -->
     <div class="d-flex flex-wrap gap-2 mb-3">
@@ -263,6 +332,10 @@ async function saveRestock() {
             <p class="fs-4 fw-bold mb-1">{{ m.quantity }} {{ m.unit }}</p>
             <p v-if="m.lowStockThreshold !== null" class="text-muted small mb-1">
               Low below {{ m.lowStockThreshold }} {{ m.unit }}
+            </p>
+            <!-- From the forecast -->
+            <p v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="small text-primary mb-1">
+              📅 Runs low: {{ formatDay(forecastFor(m.id).runsLowOn) }}
             </p>
           </div>
 
