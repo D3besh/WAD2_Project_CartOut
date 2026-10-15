@@ -109,6 +109,33 @@ h1, h2, h3, .h1, .h2, .h3 { font-weight: 800; letter-spacing: -0.02em; }
   .app-main--bare { padding-left: 2.5rem; }
 }
 
+/* top navbar */
+:root {
+  --header-height: 3.5rem;
+}
+
+html {
+  scroll-padding-top: calc(var(--header-height) + 0.5rem); /* anchors and focused inputs don't hide under the header */
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  height: var(--header-height);
+  display: flex;
+  justify-content: flex-end;   /* icon goes top right */
+  align-items: center;
+  padding: 0 1rem;
+  box-sizing: border-box;
+  background: #ffffff;         /* solid, matches your page */
+  border-bottom: 1px solid #e5e7eb;
+}
+
+@media (min-width: 768px) {
+  .app-header { margin-left: var(--sidebar-width); } /* start after the sidebar */
+}
+
 /* ---------- 4. Reusable bits ---------- */
 .sk-card {
   background: var(--sk-surface);
@@ -326,6 +353,7 @@ h1, h2, h3, .h1, .h2, .h3 { font-weight: 800; letter-spacing: -0.02em; }
 }
 .app-main > * { max-width: 1120px; margin-inline: auto; }
 .app-main--bare { padding-bottom: 1.25rem; }
+
 
 @media (min-width: 768px) {
   .app-main { padding: 2.25rem 2.5rem 3rem calc(var(--sidebar-width) + 2.5rem); }

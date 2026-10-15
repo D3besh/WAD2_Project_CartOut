@@ -432,14 +432,22 @@ async function seed() {
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('Connected to MongoDB');
 
-  // Clear existing data (children first)
+  // Clear existing data for the seed sellers ONLY (children first), so other users' data is left alone
+  const seedUsers = await User.find({
+    $or: [
+      { email: { $in: SELLERS.map((s) => s.email) } },
+      { username: { $in: SELLERS.map((s) => s.username) } },
+    ],
+  }).select('_id');
+  const seedUserIds = seedUsers.map((u) => u._id);
+
   await Promise.all([
-    Order.deleteMany({}),
-    Product.deleteMany({}),
-    Material.deleteMany({}),
-    User.deleteMany({}),
+    Order.deleteMany({ seller: { $in: seedUserIds } }),
+    Product.deleteMany({ seller: { $in: seedUserIds } }),
+    Material.deleteMany({ seller: { $in: seedUserIds } }),
   ]);
-  console.log('Cleared existing data');
+  await User.deleteMany({ _id: { $in: seedUserIds } });
+  console.log(`Cleared existing data for ${seedUserIds.length} seed user(s)`);
 
   // ---------- Users ----------
   const passwordHash = await bcrypt.hash('password123', 10);

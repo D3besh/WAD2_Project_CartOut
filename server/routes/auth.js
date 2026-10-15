@@ -9,7 +9,7 @@ const router = Router();
 // (bcryptjs), create the User, then set req.session.userId.
 //router.post('/register', notImplemented);
 
-import { registerUser, loginUser } from '../services/userService.js';
+import { registerUser, loginUser, updateShopName, updateEmail, updatePassword, HttpError, deleteProfile } from '../services/userService.js';
 
 router.post('/register', async (req, res) => {
   try {
@@ -118,6 +118,54 @@ router.get('/me', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// shared error handler for the three routes
+function handleError(err, res, fallback) {
+  if (err instanceof HttpError) return res.status(err.status).json({ message: err.message });
+  console.error(err);
+  return res.status(500).json({ message: fallback });
+}
+
+router.patch('/me/shop-name', requireAuth, async (req, res) => {
+  try {
+    const user = await updateShopName(req.user.id, req.body.shopName);
+    res.json(user);
+  } catch (err) {
+    handleError(err, res, 'Could not update shop name.');
+  }
+});
+
+router.patch('/me/email', requireAuth, async (req, res) => {
+  try {
+    const user = await updateEmail(req.user.id, req.body.email);
+    res.json(user);
+  } catch (err) {
+    handleError(err, res, 'Could not update email.');
+  }
+});
+
+router.patch('/me/password', requireAuth, async (req, res) => {
+  try {
+    await updatePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
+    res.json({ message: 'Password updated.' });
+  } catch (err) {
+    handleError(err, res, 'Could not update password.');
+  }
+});
+
+router.delete('/me', requireAuth, async (req, res) => {
+  try {
+    await deleteProfile(req.user.id, req.body.password);
+
+    req.session.destroy((err) => {
+      if (err) console.error(err);
+      res.clearCookie('connect.sid'); // use your session cookie name if you changed it
+      res.json({ message: 'Account deleted.' });
+    });
+  } catch (err) {
+    handleError(err, res, 'Could not delete account.');
   }
 });
 
