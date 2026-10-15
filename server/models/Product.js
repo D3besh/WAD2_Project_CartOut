@@ -8,6 +8,9 @@ import mongoose from 'mongoose';
 //
 // variants (optional) = different versions, e.g. "Oat milk" with a different price.
 //   extras = materials only that variant needs, on top of the recipe.
+//
+// archived = the seller "deleted" it, but past (ready/completed) orders still use it,
+//            so we only hide it.
 
 // One line of a recipe
 const recipeLineSchema = new mongoose.Schema(
@@ -22,10 +25,9 @@ const variantSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     price: { type: Number, min: 0 },        // empty = same as the product's price
+    cost: { type: Number, min: 0 }, 
     extras: [recipeLineSchema],
-  }
-  // No { _id: false } here: each variant gets its own _id, so orders can point
-  // at a variant and still find it if the seller renames it later.
+  },
 );
 
 const productSchema = new mongoose.Schema(
@@ -33,9 +35,15 @@ const productSchema = new mongoose.Schema(
     seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     name: { type: String, required: [true, 'Name is required'], trim: true, maxlength: 60 },
     price: { type: Number, required: [true, 'Price is required'], min: [0, 'Price cannot be negative'] },
+    cost: { type: Number, min: 0, default: null },
     makingTimeMins: { type: Number, min: 0, default: null }, // optional
     recipe: [recipeLineSchema],
     variants: [variantSchema],
+
+    // true = hidden from the Products page and the order form, but kept in the
+    // database so old orders can still show it (and restore its materials).
+    // Set when the seller deletes a product that is used in orders.
+    archived: { type: Boolean, default: false },
   },
   { timestamps: true, toJSON: { virtuals: true } } // so "id" appears in JSON, like materials
 );
