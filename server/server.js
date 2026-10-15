@@ -68,7 +68,16 @@ app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 
 app.use(errorHandler);
 
-connectDB(MONGODB_URI).then(() => {
-  app.listen(PORT, () => console.log(`CartOut running at http://localhost:${PORT}`));
-});
+connectDB(MONGODB_URI)
+  .then(() => {
+    const server = app.listen(PORT, () =>
+      console.log(`CartOut running at http://localhost:${PORT}`)
+    );
+    server.keepAliveTimeout = 65000;
+    server.headersTimeout = 66000;
+  })
+  .catch((err) => {
+    console.error('Failed to start:', err);
+    process.exit(1);
+  });
 

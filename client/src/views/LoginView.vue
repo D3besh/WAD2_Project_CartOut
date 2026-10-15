@@ -43,6 +43,9 @@ async function onSubmit() {
       rememberMe: rememberMe.value,
     });
 
+    console.log(response.data);
+    localStorage.setItem('user', JSON.stringify(response.data));
+
     router.push('/');
 
   } catch (err) {
