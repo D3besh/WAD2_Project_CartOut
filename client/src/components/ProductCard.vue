@@ -15,23 +15,26 @@ defineEmits(['edit']);
 </script>
 
 <template>
-  <div class="card h-100">
-    <div class="card-body">
+  <article class="sk-card sk-card--hover inv-card">
 
-      <!-- Top: name and price -->
-      <div class="d-flex justify-content-between align-items-start">
-        <h5 class="card-title">{{ product.name }}</h5>
-        <span class="fw-bold">${{ product.price.toFixed(2) }}</span>
-      </div>
-
-      <p v-if="product.makingTimeMins" class="text-muted small mb-2">
-        ⏱ {{ product.makingTimeMins }} min to make
-      </p>
-
-      <!-- Middle: the parent decides what goes here -->
-      <slot></slot>
-
-      <button class="btn btn-sm btn-outline-secondary" @click="$emit('edit', product)">Edit</button>
+    <!-- Top: name and price -->
+    <div class="inv-card__head">
+      <h2 class="inv-card__title">{{ product.name }}</h2>
+      <span class="inv-card__price">${{ product.price.toFixed(2) }}</span>
     </div>
-  </div>
+
+    <p v-if="product.makingTimeMins" class="inv-meta">
+      ⏱ {{ product.makingTimeMins }} min to make
+    </p>
+
+    <!-- Middle: the parent decides what goes here -->
+    <div class="inv-card__body">
+      <slot></slot>
+    </div>
+
+    <div class="inv-card__actions">
+      <button type="button" class="btn btn-light btn-sm" @click="$emit('edit', product)">Edit</button>
+    </div>
+
+  </article>
 </template>

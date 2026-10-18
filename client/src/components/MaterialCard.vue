@@ -16,27 +16,29 @@ defineEmits(['restock', 'edit']);
 </script>
 
 <template>
-  <div class="card h-100" :class="{ 'border-danger': material.isLow }">
-    <div class="card-body">
+  <article class="sk-card sk-card--hover inv-card" :class="{ 'is-low': material.isLow }">
 
-      <!-- Top: name and badge (same for every card) -->
-      <div class="d-flex justify-content-between align-items-start">
-        <h5 class="card-title">{{ material.name }}</h5>
-        <span v-if="material.isLow" class="badge bg-danger">Low stock</span>
-        <span v-else class="badge bg-success">In stock</span>
-      </div>
+    <!-- Top: name and status pill (same for every card) -->
+    <div class="inv-card__head">
+      <h2 class="inv-card__title">{{ material.name }}</h2>
+      <span v-if="material.isLow" class="status status--danger">Low stock</span>
+      <span v-else class="status status--ok">In stock</span>
+    </div>
 
-      <!-- Middle: the parent decides what goes here -->
+    <!-- Middle: the parent decides what goes here -->
+    <div class="inv-card__body">
       <slot></slot>
+    </div>
 
-      <!-- Bottom: buttons. $emit('event name', argument) -->
-      <button class="btn btn-sm btn-primary me-2" @click="$emit('restock', material)">
-        Mark as restocked
-      </button>
-      <button class="btn btn-sm btn-outline-secondary" @click="$emit('edit', material)">
+    <!-- Bottom: buttons. $emit('event name', argument) -->
+    <div class="inv-card__actions">
+      <button type="button" class="btn btn-light btn-sm" @click="$emit('edit', material)">
         Edit
       </button>
-
+      <button type="button" class="btn btn-primary btn-sm" @click="$emit('restock', material)">
+        Restock
+      </button>
     </div>
-  </div>
+
+  </article>
 </template>

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard.vue';
+import '../assets/inventory.css'; // styles for the Materials and Products pages
 import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
 
 // =====================================================
@@ -62,10 +63,10 @@ const productCards = computed(() => {
     let rows = [];
 
     // The plain product: just the main recipe.
-    // No name if there are no variants (the card already shows the product name).
+    // Always called "Regular", so every card looks the same
     let plain = calculateCanMake(fullRecipe(product, null), materials.value);
     rows.push({
-      name: product.variants.length > 0 ? 'Regular' : '',
+      name: 'Regular',
       price: product.price,
       canMake: plain.canMake,
       limitedBy: plain.limitedBy,
@@ -104,7 +105,8 @@ const cannotMake = computed(() => {
     for (let row of item.rows) {
       if (row.canMake === 0) {
         let fullName = item.product.name;
-        if (row.name !== '') {
+        // Only add "(Regular)" / "(Oat milk)" when the product has variants
+        if (item.product.variants.length > 0) {
           fullName = fullName + ' (' + row.name + ')';
         }
         names.push(fullName + ' — out of ' + row.limitedBy);
@@ -114,12 +116,12 @@ const cannotMake = computed(() => {
   return names;
 });
 
-// Colour of the "can make" number
+// Colour class of the "can make" number (the classes are in inventory.css)
 function canMakeColour(canMake) {
-  if (canMake === null) return 'text-muted';
-  if (canMake === 0) return 'text-danger';
-  if (canMake < 5) return 'text-warning';
-  return 'text-success';
+  if (canMake === null) return 'cap--none';
+  if (canMake === 0) return 'cap--danger';
+  if (canMake < 5) return 'cap--warn';
+  return 'cap--ok';
 }
 
 // Unit of a material, for the form ("g", "ml", "pieces")
@@ -296,133 +298,149 @@ async function deleteProduct() {
 </script>
 
 <template>
-  <section class="container py-3" data-testid="page-products">
+  <div class="inv-page" data-testid="page-products">
 
     <!-- ===== Title and Add button ===== -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <header class="page-header">
       <div>
-        <h1 class="m-0">Products</h1>
-        <p class="text-muted m-0">How many you can make with your current stock</p>
+        <h1>Products</h1>
+        <p>How many you can make with your current stock</p>
       </div>
-      <button class="btn btn-success" @click="openAddForm">+ Add product</button>
-    </div>
+      <button type="button" class="btn btn-primary" @click="openAddForm">+ Add product</button>
+    </header>
 
     <!-- ===== Error message ===== -->
-    <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+    <div v-if="errorMessage" class="inv-banner inv-banner--danger mb-3">{{ errorMessage }}</div>
 
     <!-- ===== Info message (e.g. after archiving or deleting) ===== -->
-    <div v-if="infoMessage" class="alert alert-info d-flex justify-content-between align-items-center">
+    <div v-if="infoMessage" class="inv-banner inv-banner--info mb-3">
       <span>{{ infoMessage }}</span>
-      <button class="btn-close" @click="infoMessage = ''"></button>
+      <button type="button" class="btn-close" aria-label="Dismiss" @click="infoMessage = ''"></button>
     </div>
 
     <!-- ===== Warning: products/variants that can't be made ===== -->
-    <div v-if="cannotMake.length > 0" class="alert alert-warning">
-      ⚠️ <strong>Can't make right now:</strong>
-      <ul class="mb-0">
-        <li v-for="name in cannotMake" :key="name">{{ name }}</li>
-      </ul>
+    <div v-if="cannotMake.length > 0" class="inv-banner inv-banner--warn mb-3">
+      <div>
+        <p class="inv-banner__title">⚠️ Can't make right now</p>
+        <ul>
+          <li v-for="name in cannotMake" :key="name">{{ name }}</li>
+        </ul>
+      </div>
     </div>
 
     <!-- ===== Search ===== -->
-    <input v-model="search" class="form-control mb-3" style="max-width: 300px" placeholder="Search products" />
+    <div class="sk-card inv-toolbar mb-4">
+      <span class="inv-meta">{{ productCards.length }} product(s)</span>
+      <input
+        id="product-search"
+        v-model="search"
+        class="form-control inv-search"
+        placeholder="Search products"
+        aria-label="Search products"
+      />
+    </div>
 
     <!-- ===== Product cards ===== -->
-    <p v-if="productCards.length === 0" class="text-muted">No products to show.</p>
+    <TransitionGroup v-if="productCards.length > 0" name="list" tag="div" class="sk-grid inv-grid-top">
+      <ProductCard
+        v-for="item in productCards"
+        :key="item.product.id"
+        :product="item.product"
+        @edit="openEditForm"
+      >
+        <!-- This goes into the card's <slot> -->
+        <div class="inv-capacity">
+          <div class="inv-capacity__label">Can make now</div>
 
-    <div class="row g-3">
-      <div v-for="item in productCards" :key="item.product.id" class="col-12 col-md-6 col-lg-4">
-
-        <ProductCard :product="item.product" @edit="openEditForm">
-
-          <!-- This goes into the card's <slot>: one row per variant -->
-          <div class="border rounded p-2 mb-2 bg-light">
-            <div class="small text-muted mb-1">Can make now</div>
-
-            <div v-for="(row, index) in item.rows" :key="index" class="mb-2">
-              <div class="d-flex justify-content-between align-items-center">
-                <span v-if="row.name !== ''">
-                  {{ row.name }} <span class="text-muted small">${{ row.price.toFixed(2) }}</span>
-                </span>
-                <span v-else></span>
-
-                <span v-if="row.canMake === null" class="text-muted">—</span>
-                <span v-else class="fs-5 fw-bold" :class="canMakeColour(row.canMake)">{{ row.canMake }}</span>
-              </div>
-
-              <div v-if="row.limitedBy" class="small text-muted">Limited by {{ row.limitedBy }}</div>
-              <div v-for="w in row.warnings" :key="w" class="small text-warning">⚠️ {{ w }}</div>
+          <!-- One row per option: Regular, then each variant -->
+          <div v-for="(row, index) in item.rows" :key="index" class="inv-cap-row">
+            <div class="inv-cap-row__main">
+              <span class="inv-cap-row__name">
+                {{ row.name }}<span class="price">${{ row.price.toFixed(2) }}</span>
+              </span>
+              <span v-if="row.canMake === null" class="cap-num cap--none">—</span>
+              <span v-else class="cap-num" :class="canMakeColour(row.canMake)">{{ row.canMake }}</span>
             </div>
+            <div v-if="row.limitedBy" class="inv-cap-row__note">Limited by {{ row.limitedBy }}</div>
+            <div v-for="w in row.warnings" :key="w" class="inv-cap-row__warn">⚠️ {{ w }}</div>
           </div>
+        </div>
+      </ProductCard>
+    </TransitionGroup>
 
-        </ProductCard>
-      </div>
+    <div v-else class="empty-state">
+      <template v-if="products.length === 0">No products yet. Add one and give it a recipe to see how many you can make.</template>
+      <template v-else>No products match.</template>
     </div>
 
     <!-- ===================================================== -->
     <!-- POP-UP: Add / Edit product                             -->
     <!-- ===================================================== -->
-    <div v-if="showForm" class="modal d-block popup-backdrop">
+    <div v-if="showForm" class="modal d-block inv-modal">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">{{ editingId === null ? 'Add product' : 'Edit product' }}</h5>
-            <button class="btn-close" @click="showForm = false"></button>
+            <button type="button" class="btn-close" aria-label="Close" @click="showForm = false"></button>
           </div>
 
           <div class="modal-body">
-            <div v-if="formError" class="alert alert-danger py-2">{{ formError }}</div>
+            <div v-if="formError" class="inv-banner inv-banner--danger mb-3">{{ formError }}</div>
 
             <!-- ----- Basics ----- -->
-            <label class="form-label">Product name</label>
-            <input v-model="form.name" class="form-control mb-3" placeholder="e.g. Matcha Latte" />
+            <label for="product-name" class="form-label">Product name</label>
+            <input id="product-name" v-model="form.name" class="form-control mb-3" placeholder="e.g. Matcha Latte" />
 
-            <div class="row mb-3">
-              <div class="col">
-                <label class="form-label">Price ($)</label>
-                <input v-model.number="form.price" type="number" min="0" step="0.5" class="form-control" />
+            <div class="row g-3">
+              <div class="col-sm-4">
+                <label for="product-price" class="form-label">Price ($)</label>
+                <input id="product-price" v-model.number="form.price" type="number" min="0" step="0.5" class="form-control" />
               </div>
-              <div class="col">
-                <label class="form-label">Cost to make ($)</label>
-                <input v-model.number="form.cost" type="number" min="0" step="0.1" class="form-control" placeholder="e.g. 6.50" />
+              <div class="col-sm-4">
+                <label for="product-cost" class="form-label">Cost to make ($)</label>
+                <input id="product-cost" v-model.number="form.cost" type="number" min="0" step="0.1" class="form-control" placeholder="e.g. 6.50" />
               </div>
-              <div class="col">
-                <label class="form-label">Time to make (min, optional)</label>
-                <input v-model.number="form.makingTimeMins" type="number" min="0" class="form-control" />
+              <div class="col-sm-4">
+                <label for="product-time" class="form-label">Time to make (min)</label>
+                <input id="product-time" v-model.number="form.makingTimeMins" type="number" min="0" class="form-control" placeholder="Optional" />
               </div>
             </div>
 
             <!-- ----- Main recipe ----- -->
-            <h6 class="mt-4">Recipe <span class="text-muted small">(materials for ONE unit, shared by every variant)</span></h6>
-            <p v-if="materials.length === 0" class="text-muted small">
+            <h6 class="inv-section-title">
+              Recipe <span class="hint">· materials for ONE unit, shared by every variant</span>
+            </h6>
+            <p v-if="materials.length === 0" class="inv-meta mb-2">
               You have no materials yet. Add some on the Materials page first.
             </p>
 
-            <div v-for="(line, index) in form.recipe" :key="index" class="d-flex gap-2 mb-2">
-              <select v-model="line.material" class="form-select">
+            <div v-for="(line, index) in form.recipe" :key="index" class="inv-line">
+              <select v-model="line.material" class="form-select" :aria-label="`Recipe material ${index + 1}`">
                 <option value="" disabled>Choose material…</option>
                 <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
               </select>
-              <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control" style="max-width: 110px" />
-              <span class="align-self-center" style="min-width: 50px">{{ unitOf(line.material) }}</span>
-              <button class="btn btn-outline-danger" @click="removeRecipeRow(index)">✕</button>
+              <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control" :aria-label="`Amount ${index + 1}`" />
+              <span class="unit">{{ unitOf(line.material) }}</span>
+              <button type="button" class="btn btn-light inv-remove" aria-label="Remove material" @click="removeRecipeRow(index)">✕</button>
             </div>
-            <button class="btn btn-sm btn-outline-primary" @click="addRecipeRow">+ Add material</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" @click="addRecipeRow">+ Add material</button>
 
             <!-- ----- Variants ----- -->
-            <h6 class="mt-4">Variants <span class="text-muted small">(optional, e.g. Small, Large, Large + lavender topping)</span></h6>
-            <p class="text-muted small mb-2">
+            <h6 class="inv-section-title">
+              Variants <span class="hint">· optional, e.g. Small, Large, Oat milk</span>
+            </h6>
+            <p class="inv-meta mb-2">
               Customers can order the regular product or one variant. For a combination, add it as its own variant.
             </p>
 
-            <div v-for="(variant, vIndex) in form.variants" :key="variant._id ?? vIndex" class="border rounded p-3 mb-3 bg-light">
-              <div class="d-flex gap-2 mb-2 align-items-end">
-                <div class="flex-grow-1">
-                  <label :for="`variant-name-${vIndex}`" class="form-label small mb-1">Variant name</label>
+            <div v-for="(variant, vIndex) in form.variants" :key="variant._id ?? vIndex" class="inv-variant">
+              <div class="inv-variant__fields">
+                <div>
+                  <label :for="`variant-name-${vIndex}`" class="form-label">Variant name</label>
                   <input :id="`variant-name-${vIndex}`" v-model="variant.name" class="form-control" placeholder="e.g. Large" />
                 </div>
-                <div style="max-width: 140px">
-                  <label :for="`variant-price-${vIndex}`" class="form-label small mb-1">Price ($)</label>
+                <div>
+                  <label :for="`variant-price-${vIndex}`" class="form-label">Price ($)</label>
                   <input
                     :id="`variant-price-${vIndex}`"
                     v-model.number="variant.price"
@@ -433,8 +451,8 @@ async function deleteProduct() {
                     :placeholder="`Same: ${form.price ?? 0}`"
                   />
                 </div>
-                <div style="max-width: 140px">
-                  <label :for="`variant-cost-${vIndex}`" class="form-label small mb-1">Cost to make ($)</label>
+                <div>
+                  <label :for="`variant-cost-${vIndex}`" class="form-label">Cost ($)</label>
                   <input
                     :id="`variant-cost-${vIndex}`"
                     v-model.number="variant.cost"
@@ -445,41 +463,40 @@ async function deleteProduct() {
                     :placeholder="`Same: ${form.cost ?? '–'}`"
                   />
                 </div>
-                <button class="btn btn-outline-danger" @click="removeVariant(vIndex)">Remove</button>
+                <button type="button" class="btn btn-light btn-sm" @click="removeVariant(vIndex)">Remove</button>
               </div>
 
-              <div class="small text-muted mb-1">Extra materials only this variant uses:</div>
-              <div v-for="(line, eIndex) in variant.extras" :key="eIndex" class="d-flex gap-2 mb-2">
-                <select v-model="line.material" class="form-select">
+              <div class="inv-meta mb-2">Extra materials only this variant uses:</div>
+              <div v-for="(line, eIndex) in variant.extras" :key="eIndex" class="inv-line">
+                <select v-model="line.material" class="form-select" :aria-label="`Extra material ${eIndex + 1}`">
                   <option value="" disabled>Choose material…</option>
                   <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
                 </select>
-                <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control" style="max-width: 110px" />
-                <span class="align-self-center" style="min-width: 50px">{{ unitOf(line.material) }}</span>
-                <button class="btn btn-outline-danger" @click="removeExtraRow(variant, eIndex)">✕</button>
+                <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control" :aria-label="`Extra amount ${eIndex + 1}`" />
+                <span class="unit">{{ unitOf(line.material) }}</span>
+                <button type="button" class="btn btn-light inv-remove" aria-label="Remove extra material" @click="removeExtraRow(variant, eIndex)">✕</button>
               </div>
-              <button class="btn btn-sm btn-outline-primary" @click="addExtraRow(variant)">+ Add extra material</button>
+              <button type="button" class="btn btn-outline-primary btn-sm" @click="addExtraRow(variant)">+ Add extra material</button>
             </div>
 
-            <button class="btn btn-sm btn-outline-secondary" @click="addVariant">+ Add variant</button>
+            <button type="button" class="btn btn-light btn-sm" @click="addVariant">+ Add variant</button>
           </div>
 
           <div class="modal-footer">
-            <button v-if="editingId !== null" class="btn btn-outline-danger me-auto" @click="deleteProduct">
+            <button
+              v-if="editingId !== null"
+              type="button"
+              class="btn btn-outline-danger btn-sm me-auto"
+              @click="deleteProduct"
+            >
               Delete
             </button>
-            <button class="btn btn-secondary" @click="showForm = false">Cancel</button>
-            <button class="btn btn-success" @click="saveForm">Save</button>
+            <button type="button" class="btn btn-light" @click="showForm = false">Cancel</button>
+            <button type="button" class="btn btn-primary" @click="saveForm">Save</button>
           </div>
         </div>
       </div>
     </div>
 
-  </section>
+  </div>
 </template>
-
-<style scoped>
-.popup-backdrop {
-  background-color: rgba(0, 0, 0, 0.5);
-}
-</style>

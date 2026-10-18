@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import MaterialCard from '../components/MaterialCard.vue';
+import '../assets/inventory.css'; // styles for the Materials and Products pages
 
 // =====================================================
 // 1. DATA
@@ -36,6 +37,7 @@ const showShoppingList = ref(false);
 
 // Forecast: which materials will run low in the next 30 days (from the server)
 const forecast = ref(null);       // null = not loaded yet
+const showAllForecast = ref(false); // false = only show the 3 most urgent
 
 // =====================================================
 // 2. LOAD MATERIALS FROM THE SERVER
@@ -119,6 +121,14 @@ const forecastAlerts = computed(() => {
   return list.sort((a, b) => (a.runsLowOn || a.runsOutOn).localeCompare(b.runsLowOn || b.runsOutOn));
 });
 
+// The forecast alerts to show in the banner: the first 3, or all of them after "Show more"
+const visibleForecastAlerts = computed(() => {
+  if (showAllForecast.value) {
+    return forecastAlerts.value;
+  }
+  return forecastAlerts.value.slice(0, 3);
+});
+
 // The forecast for one material (used inside each card), or null
 function forecastFor(materialId) {
   if (forecast.value === null) {
@@ -126,6 +136,22 @@ function forecastFor(materialId) {
   }
   let found = forecast.value.materials.find((f) => f.id === materialId);
   return found || null;
+}
+
+// How full the stock bar on a card is (0–100).
+// Exact amounts: a full bar = 3× the low-stock level.
+// Levels: Low / Medium / High = a quarter / half / full bar.
+function stockPercent(m) {
+  if (m.trackingMode === 'level') {
+    if (m.level === 'low') return 25;
+    if (m.level === 'medium') return 55;
+    return 100;
+  }
+  if (!m.lowStockThreshold) {
+    return 100; // no low-stock level set, nothing to compare with
+  }
+  let percent = Math.round((m.quantity / (m.lowStockThreshold * 3)) * 100);
+  return Math.max(4, Math.min(100, percent)); // keep a sliver visible, never over 100
 }
 
 // "2026-10-18" → "Sun, 18 Oct"
@@ -250,156 +276,193 @@ async function saveRestock() {
 </script>
 
 <template>
-  <section class="container py-3" data-testid="page-materials">
+  <div class="inv-page" data-testid="page-materials">
 
     <!-- ===== Title and Add button ===== -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h1 class="m-0">Materials</h1>
-      <button class="btn btn-success" @click="openAddForm">+ Add material</button>
-    </div>
+    <header class="page-header">
+      <div>
+        <h1>Materials</h1>
+        <p>What you have in stock</p>
+      </div>
+      <button type="button" class="btn btn-primary" @click="openAddForm">+ Add material</button>
+    </header>
 
     <!-- ===== Error message ===== -->
-    <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+    <div v-if="errorMessage" class="inv-banner inv-banner--danger mb-3">{{ errorMessage }}</div>
 
-    <!-- ===== Shopping list banner (only when something is low) ===== -->
-    <div
-      v-if="lowMaterials.length > 0"
-      class="alert alert-warning d-flex justify-content-between align-items-center"
-    >
-      <span>🛒 <strong>{{ lowMaterials.length }}</strong> material(s) running low</span>
-      <button class="btn btn-sm btn-dark" @click="showShoppingList = true">View shopping list</button>
+    <!-- ===== Low stock banner (only when something is low) ===== -->
+    <div v-if="lowMaterials.length > 0" class="inv-banner inv-banner--warn mb-3">
+      <p class="inv-banner__title">
+        🛒 <strong>{{ lowMaterials.length }}</strong> material(s) running low
+      </p>
+      <button type="button" class="btn btn-light btn-sm" @click="showShoppingList = true">
+        View shopping list
+      </button>
     </div>
 
     <!-- ===== Forecast: materials that will run low in the next 30 days ===== -->
-    <div v-if="forecastAlerts.length > 0" class="alert alert-info">
-      <strong>📅 Coming up in the next {{ forecast.forecastDays }} days</strong>
-      <ul class="mb-0 mt-2">
-        <li v-for="f in forecastAlerts" :key="f.id">
-          <strong>{{ f.name }}</strong>
-          <span v-if="f.runsLowOn"> is likely to drop below {{ f.lowStockThreshold }} {{ f.unit }} on <strong>{{ formatDay(f.runsLowOn) }}</strong></span>
-          <span v-if="f.runsLowOn && f.runsOutOn"> and</span>
-          <span v-if="f.runsOutOn"> may run out by <strong>{{ formatDay(f.runsOutOn) }}</strong></span>.
-          <span v-if="f.isSpike">
-            {{ f.busiestDay }}s are your busiest day (about {{ f.spikeRatio }}× a normal day).
-          </span>
-          Buy about {{ f.suggestedBuy }} {{ f.unit }} to last {{ forecast.forecastDays }} days.
-        </li>
-      </ul>
+    <div v-if="forecastAlerts.length > 0" class="inv-banner inv-banner--info mb-3">
+      <div>
+        <p class="inv-banner__title">📅 Coming up in the next {{ forecast.forecastDays }} days</p>
+        <ul>
+          <li v-for="f in visibleForecastAlerts" :key="f.id">
+            <strong>{{ f.name }}</strong>
+            <span v-if="f.runsLowOn"> is likely to drop below {{ f.lowStockThreshold }} {{ f.unit }} on <strong>{{ formatDay(f.runsLowOn) }}</strong></span>
+            <span v-if="f.runsLowOn && f.runsOutOn"> and</span>
+            <span v-if="f.runsOutOn"> may run out by <strong>{{ formatDay(f.runsOutOn) }}</strong></span>.
+            <span v-if="f.isSpike" class="inv-hint">
+              {{ f.busiestDay }}s are your busiest day (about {{ f.spikeRatio }}× a normal day).
+            </span>
+            <span class="inv-hint">Buy about {{ f.suggestedBuy }} {{ f.unit }} to last {{ forecast.forecastDays }} days.</span>
+          </li>
+        </ul>
+
+        <!-- Only when there are more than 3 -->
+        <button
+          v-if="forecastAlerts.length > 3"
+          type="button"
+          class="btn btn-link btn-sm inv-more"
+          @click="showAllForecast = !showAllForecast"
+        >
+          {{ showAllForecast ? 'Show less' : 'Show ' + (forecastAlerts.length - 3) + ' more' }}
+        </button>
+      </div>
     </div>
 
     <!-- No order history yet = nothing to learn from -->
-    <p v-if="forecast !== null && forecast.historyOrderCount === 0" class="text-muted small">
-      📅 Forecast starts working once you have some past orders.
+    <p v-if="forecast !== null && forecast.historyOrderCount === 0" class="inv-meta mb-3">
+      📅 The forecast starts working once you have some completed orders.
     </p>
 
-    <!-- ===== Filter and search ===== -->
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <button
-        class="btn btn-sm"
-        :class="showLowOnly ? 'btn-outline-secondary' : 'btn-secondary'"
-        @click="setShowLowOnly(false)"
-      >
-        All
-      </button>
-      <button
-        class="btn btn-sm"
-        :class="showLowOnly ? 'btn-secondary' : 'btn-outline-secondary'"
-        @click="setShowLowOnly(true)"
-      >
-        Low stock ({{ lowMaterials.length }})
-      </button>
+    <!-- ===== Filter chips and search ===== -->
+    <div class="sk-card inv-toolbar mb-4">
+      <div class="chips">
+        <button type="button" class="chip" :class="{ 'is-active': !showLowOnly }" @click="setShowLowOnly(false)">
+          All
+        </button>
+        <button type="button" class="chip" :class="{ 'is-active': showLowOnly }" @click="setShowLowOnly(true)">
+          Low stock
+          <span v-if="lowMaterials.length > 0" class="count">{{ lowMaterials.length }}</span>
+        </button>
+      </div>
       <input
+        id="material-search"
         v-model="search"
-        class="form-control form-control-sm ms-auto"
-        style="max-width: 250px"
+        class="form-control inv-search"
         placeholder="Search materials"
+        aria-label="Search materials"
       />
     </div>
 
     <!-- ===== Material cards ===== -->
-    <p v-if="visibleMaterials.length === 0" class="text-muted">No materials to show.</p>
+    <TransitionGroup v-if="visibleMaterials.length > 0" name="list" tag="div" class="sk-grid">
 
-    <div class="row g-3">
-      <div v-for="m in visibleMaterials" :key="m.id" class="col-12 col-md-6 col-lg-4">
+      <!-- Prop: :material.  Events: @restock and @edit (the card sends the material back). -->
+      <MaterialCard
+        v-for="m in visibleMaterials"
+        :key="m.id"
+        :material="m"
+        @restock="markRestocked"
+        @edit="openEditForm"
+      >
+        <!-- Everything in here goes into the card's <slot> -->
 
-        <!-- Prop: :material.  Events: @restock and @edit (the card sends the material back). -->
-        <MaterialCard :material="m" @restock="markRestocked" @edit="openEditForm">
-
-          <!-- Everything in here goes into the card's <slot> -->
-
-          <!-- Quantity materials show a number -->
-          <div v-if="m.trackingMode === 'quantity'">
-            <p class="fs-4 fw-bold mb-1">{{ m.quantity }} {{ m.unit }}</p>
-            <p v-if="m.lowStockThreshold !== null" class="text-muted small mb-1">
-              Low below {{ m.lowStockThreshold }} {{ m.unit }}
-            </p>
-            <!-- From the forecast -->
-            <p v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="small text-primary mb-1">
-              📅 Runs low: {{ formatDay(forecastFor(m.id).runsLowOn) }}
-            </p>
+        <!-- Quantity materials show a number -->
+        <template v-if="m.trackingMode === 'quantity'">
+          <div class="inv-qty">{{ m.quantity }}<small>{{ m.unit }}</small></div>
+          <div class="inv-meter" aria-hidden="true">
+            <span :class="{ 'is-low': m.isLow }" :style="{ width: stockPercent(m) + '%' }"></span>
           </div>
-
-          <!-- Level materials show Low / Medium / High -->
-          <div v-else>
-            <p class="fs-4 fw-bold mb-1 text-capitalize">{{ m.level }}</p>
-            <p class="text-muted small mb-1">Tracked by level</p>
-          </div>
-
-          <p v-if="m.usedIn.length > 0" class="small mb-2">
-            Used in: {{ m.usedIn.join(', ') }}
+          <p v-if="m.lowStockThreshold !== null" class="inv-meta">
+            Low below {{ m.lowStockThreshold }} {{ m.unit }}
           </p>
+          <!-- From the forecast -->
+          <span v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="inv-forecast">
+            📅 Runs low {{ formatDay(forecastFor(m.id).runsLowOn) }}
+          </span>
+        </template>
 
-        </MaterialCard>
-      </div>
+        <!-- Level materials show Low / Medium / High -->
+        <template v-else>
+          <div class="inv-qty inv-level">{{ m.level }}</div>
+          <div class="inv-meter" aria-hidden="true">
+            <span :class="{ 'is-low': m.isLow }" :style="{ width: stockPercent(m) + '%' }"></span>
+          </div>
+          <p class="inv-meta">Tracked by level</p>
+        </template>
+
+        <p v-if="m.usedIn.length > 0" class="inv-used">
+          Used in {{ m.usedIn.join(', ') }}
+        </p>
+      </MaterialCard>
+
+    </TransitionGroup>
+
+    <div v-else class="empty-state">
+      <template v-if="materials.length === 0">No materials yet. Add your first one to start tracking stock.</template>
+      <template v-else>No materials match.</template>
     </div>
 
     <!-- ===================================================== -->
     <!-- POP-UP: Add / Edit material                            -->
     <!-- ===================================================== -->
-    <div v-if="showForm" class="modal d-block popup-backdrop">
-      <div class="modal-dialog">
+    <div v-if="showForm" class="modal d-block inv-modal">
+      <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">{{ editingId === null ? 'Add material' : 'Edit material' }}</h5>
-            <button class="btn-close" @click="showForm = false"></button>
+            <button type="button" class="btn-close" aria-label="Close" @click="showForm = false"></button>
           </div>
 
           <div class="modal-body">
-            <div v-if="formError" class="alert alert-danger py-2">{{ formError }}</div>
+            <div v-if="formError" class="inv-banner inv-banner--danger mb-3">{{ formError }}</div>
 
-            <label class="form-label">Name</label>
-            <input v-model="form.name" class="form-control mb-3" placeholder="e.g. Matcha powder" />
+            <label for="material-name" class="form-label">Name</label>
+            <input id="material-name" v-model="form.name" class="form-control mb-3" placeholder="e.g. Matcha powder" />
 
-            <label class="form-label">Unit</label>
-            <select v-model="form.unit" class="form-select mb-3">
+            <label for="material-unit" class="form-label">Unit</label>
+            <select id="material-unit" v-model="form.unit" class="form-select mb-3">
               <option value="g">grams (g)</option>
               <option value="ml">millilitres (ml)</option>
               <option value="pieces">pieces</option>
             </select>
 
-            <label class="form-label d-block">How do you track it?</label>
-            <div class="form-check form-check-inline mb-3">
-              <input v-model="form.trackingMode" id="mode-qty" type="radio" value="quantity" class="form-check-input" />
-              <label for="mode-qty" class="form-check-label">Exact amount</label>
-            </div>
-            <div class="form-check form-check-inline mb-3">
-              <input v-model="form.trackingMode" id="mode-level" type="radio" value="level" class="form-check-input" />
-              <label for="mode-level" class="form-check-label">Low / Medium / High</label>
+            <span class="form-label d-block">How do you track it?</span>
+            <div class="inv-segment mb-3">
+              <button
+                type="button"
+                class="chip"
+                :class="{ 'is-active': form.trackingMode === 'quantity' }"
+                @click="form.trackingMode = 'quantity'"
+              >
+                Exact amount
+              </button>
+              <button
+                type="button"
+                class="chip"
+                :class="{ 'is-active': form.trackingMode === 'level' }"
+                @click="form.trackingMode = 'level'"
+              >
+                Low / Medium / High
+              </button>
             </div>
 
             <!-- Only for exact amount -->
-            <div v-if="form.trackingMode === 'quantity'">
-              <label class="form-label">How much do you have now?</label>
-              <input v-model.number="form.quantity" type="number" min="0" class="form-control mb-3" />
-
-              <label class="form-label">Warn me when it drops below (optional)</label>
-              <input v-model.number="form.lowStockThreshold" type="number" min="0" class="form-control" />
+            <div v-if="form.trackingMode === 'quantity'" class="row g-3">
+              <div class="col-sm-6">
+                <label for="material-qty" class="form-label">How much do you have now?</label>
+                <input id="material-qty" v-model.number="form.quantity" type="number" min="0" class="form-control" />
+              </div>
+              <div class="col-sm-6">
+                <label for="material-threshold" class="form-label">Warn me below (optional)</label>
+                <input id="material-threshold" v-model.number="form.lowStockThreshold" type="number" min="0" class="form-control" />
+              </div>
             </div>
 
             <!-- Only for level -->
             <div v-else>
-              <label class="form-label">Current level</label>
-              <select v-model="form.level" class="form-select">
+              <label for="material-level" class="form-label">Current level</label>
+              <select id="material-level" v-model="form.level" class="form-select">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -408,11 +471,16 @@ async function saveRestock() {
           </div>
 
           <div class="modal-footer">
-            <button v-if="editingId !== null" class="btn btn-outline-danger me-auto" @click="deleteMaterial">
+            <button
+              v-if="editingId !== null"
+              type="button"
+              class="btn btn-outline-danger btn-sm me-auto"
+              @click="deleteMaterial"
+            >
               Delete
             </button>
-            <button class="btn btn-secondary" @click="showForm = false">Cancel</button>
-            <button class="btn btn-success" @click="saveForm">Save</button>
+            <button type="button" class="btn btn-light" @click="showForm = false">Cancel</button>
+            <button type="button" class="btn btn-primary" @click="saveForm">Save</button>
           </div>
         </div>
       </div>
@@ -421,27 +489,30 @@ async function saveRestock() {
     <!-- ===================================================== -->
     <!-- POP-UP: Restock (quantity materials only)              -->
     <!-- ===================================================== -->
-    <div v-if="restockTarget !== null" class="modal d-block popup-backdrop">
-      <div class="modal-dialog">
+    <div v-if="restockTarget !== null" class="modal d-block inv-modal">
+      <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">Restock {{ restockTarget.name }}</h5>
-            <button class="btn-close" @click="restockTarget = null"></button>
+            <button type="button" class="btn-close" aria-label="Close" @click="restockTarget = null"></button>
           </div>
 
           <div class="modal-body">
-            <div v-if="restockError" class="alert alert-danger py-2">{{ restockError }}</div>
-            <p>You have {{ restockTarget.quantity }} {{ restockTarget.unit }} now.</p>
-            <label class="form-label">How much did you buy? ({{ restockTarget.unit }})</label>
-            <input v-model.number="restockAmount" type="number" min="0" class="form-control" />
-            <p class="mt-2 mb-0">
+            <div v-if="restockError" class="inv-banner inv-banner--danger mb-3">{{ restockError }}</div>
+            <p class="inv-meta mb-3">You have <strong>{{ restockTarget.quantity }} {{ restockTarget.unit }}</strong> now.</p>
+            <label for="restock-amount" class="form-label">How much did you buy?</label>
+            <div class="input-group">
+              <input id="restock-amount" v-model.number="restockAmount" type="number" min="0" class="form-control" />
+              <span class="input-group-text">{{ restockTarget.unit }}</span>
+            </div>
+            <p class="mt-3 mb-0">
               New total: <strong>{{ restockTarget.quantity + restockAmount }} {{ restockTarget.unit }}</strong>
             </p>
           </div>
 
           <div class="modal-footer">
-            <button class="btn btn-secondary" @click="restockTarget = null">Cancel</button>
-            <button class="btn btn-success" @click="saveRestock">Mark as restocked</button>
+            <button type="button" class="btn btn-light" @click="restockTarget = null">Cancel</button>
+            <button type="button" class="btn btn-primary" @click="saveRestock">Mark as restocked</button>
           </div>
         </div>
       </div>
@@ -450,40 +521,34 @@ async function saveRestock() {
     <!-- ===================================================== -->
     <!-- POP-UP: Shopping list                                  -->
     <!-- ===================================================== -->
-    <div v-if="showShoppingList" class="modal d-block popup-backdrop">
-      <div class="modal-dialog">
+    <div v-if="showShoppingList" class="modal d-block inv-modal">
+      <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">🛒 Shopping list</h5>
-            <button class="btn-close" @click="showShoppingList = false"></button>
+            <button type="button" class="btn-close" aria-label="Close" @click="showShoppingList = false"></button>
           </div>
 
           <div class="modal-body">
-            <p v-if="lowMaterials.length === 0">Nothing is running low!</p>
-            <ul class="list-group">
-              <li v-for="m in lowMaterials" :key="m.id" class="list-group-item">
-                <strong>{{ m.name }}</strong><br />
-                <small v-if="m.trackingMode === 'quantity'" class="text-muted">
-                  Have {{ m.quantity }} {{ m.unit }} (low below {{ m.lowStockThreshold }})
-                </small>
-                <small v-else class="text-muted">Level is low</small>
-              </li>
-            </ul>
+            <p v-if="lowMaterials.length === 0" class="inv-meta">Nothing is running low!</p>
+            <div v-for="m in lowMaterials" :key="m.id" class="inv-shop-row">
+              <div>
+                <strong>{{ m.name }}</strong>
+                <p v-if="m.trackingMode === 'quantity'" class="inv-meta">
+                  Have {{ m.quantity }} {{ m.unit }} · low below {{ m.lowStockThreshold }}
+                </p>
+                <p v-else class="inv-meta">Level is low</p>
+              </div>
+              <span class="status status--danger">Low</span>
+            </div>
           </div>
 
           <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showShoppingList = false">Close</button>
+            <button type="button" class="btn btn-light" @click="showShoppingList = false">Close</button>
           </div>
         </div>
       </div>
     </div>
 
-  </section>
+  </div>
 </template>
-
-<style scoped>
-/* Dark see-through background behind the pop-ups */
-.popup-backdrop {
-  background-color: rgba(0, 0, 0, 0.5);
-}
-</style>
