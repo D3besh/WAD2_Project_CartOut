@@ -169,45 +169,8 @@ async function loadOrders() {
   }
 }
 
-// colour
-
+// Appearance settings — light and dark mode only
 const showAppearance = ref(false);
-
-const palettes = [
-  {
-    value: "default",
-    name: "Default",
-    colours: ["#557a2b", "#f8f7f2", "#ffffff"],
-  },
-  {
-    value: "steel",
-    name: "Light Steel",
-    colours: ["#495057", "#e9ecef", "#ffffff"],
-  },
-  {
-    value: "teal",
-    name: "Teal Lemon Frost",
-    colours: ["#007f91", "#ffdc65", "#f4f4f8"],
-  },
-  {
-    value: "flamingo",
-    name: "Fiesta Flamingo",
-    colours: ["#ad1630", "#63cbb5", "#fff0ed"],
-  },
-  {
-    value: "sunrise",
-    name: "Golden Sunrise",
-    colours: ["#79345f", "#f5f76b", "#f2f1e6"],
-  },
-];
-
-const savedPalette = localStorage.getItem("cartoutPalette");
-
-const selectedPalette = ref(
-  palettes.some((palette) => palette.value === savedPalette)
-    ? savedPalette
-    : "default",
-);
 
 const selectedMode = ref(
   localStorage.getItem("cartoutMode") === "dark" ? "dark" : "light",
@@ -216,6 +179,7 @@ const selectedMode = ref(
 function applyAppearance() {
   const website = document.documentElement;
 
+  // Remove old palette classes and display-mode classes
   website.classList.remove(
     "light-mode",
     "dark-mode",
@@ -223,23 +187,18 @@ function applyAppearance() {
     "theme-steel",
     "theme-teal",
     "theme-flamingo",
-    "theme-sunrise"
+    "theme-sunrise",
   );
 
+  // Apply selected mode
   website.classList.add(selectedMode.value + "-mode");
-  website.classList.add("theme-" + selectedPalette.value);
 
-  localStorage.setItem("cartoutPalette", selectedPalette.value);
+  // Save only the display mode
   localStorage.setItem("cartoutMode", selectedMode.value);
-}
-
-function choosePalette(value) {
-  selectedPalette.value = value;
-  applyAppearance();
+  localStorage.removeItem("cartoutPalette");
 }
 
 function resetAppearance() {
-  selectedPalette.value = "default";
   selectedMode.value = "light";
   applyAppearance();
 }
@@ -440,6 +399,7 @@ onMounted(loadShop);
         </div>
       </div>
     </div>
+
     <!-- Appearance settings -->
     <div class="home-appearance mt-3 mb-4">
       <button
@@ -450,7 +410,9 @@ onMounted(loadShop);
         @click="showAppearance = !showAppearance"
       >
         <span>Appearance settings</span>
-        <span aria-hidden="true">{{ showAppearance ? "−" : "+" }}</span>
+        <span aria-hidden="true">
+          {{ showAppearance ? "−" : "+" }}
+        </span>
       </button>
 
       <div
@@ -459,41 +421,10 @@ onMounted(loadShop);
         class="home-appearance-content"
       >
         <p class="home-appearance-description">
-          Choose colours and a display mode for all pages.
+          Choose your preferred display mode.
         </p>
 
-        <h2 class="h6 mb-3">Colour palette</h2>
-
-        <div class="row g-3">
-          <div
-            v-for="palette in palettes"
-            :key="palette.value"
-            class="col-12 col-sm-6 col-lg-4"
-          >
-            <button
-              type="button"
-              class="home-palette-option"
-              :class="{ 'is-selected': selectedPalette === palette.value }"
-              :aria-pressed="selectedPalette === palette.value"
-              @click="choosePalette(palette.value)"
-            >
-              <span class="home-palette-preview" aria-hidden="true">
-                <span
-                  v-for="colour in palette.colours"
-                  :key="colour"
-                  class="home-palette-swatch"
-                  :style="{ backgroundColor: colour }"
-                ></span>
-              </span>
-
-              <span class="home-palette-name">
-                {{ palette.name }}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div class="mt-4">
+        <div>
           <label for="appearance-mode" class="form-label"> Display mode </label>
 
           <select
@@ -523,4 +454,4 @@ onMounted(loadShop);
   </section>
 </template>
 
-<style scoped src="../assets/home.css"></style>
+<style src="../assets/home.css"></style>

@@ -1,14 +1,7 @@
-/* =========================================
-   1. Home-page layout
-   ========================================= */
+/* CartOut — home layout and light/dark display modes.
+   No colour-palette selection rules. */
 
-/* .home-orders {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-top: 1rem;
-} */
-
+/* 1. Home-page layout */
 .home-order-wrapper {
   width: fit-content;
   max-width: 100%;
@@ -38,14 +31,8 @@
   border-color: #565e64;
 }
 
-
-/* =========================================
-   2. Appearance settings box
-   ========================================= */
-
+/* 2. Collapsible appearance settings */
 .home-appearance {
-  background-color: white;
-  color: #2b2420;
   border: 1px solid #e5e4da;
   border-radius: 10px;
   overflow: hidden;
@@ -56,27 +43,21 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-
   width: 100%;
   padding: 1rem;
-
   background-color: transparent;
   color: inherit;
   border: 0;
-
   font: inherit;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
 
-.home-appearance-toggle:hover {
-  background-color: #eeeeee;
-}
-
-.home-appearance-toggle:focus-visible {
+.home-appearance-toggle:focus-visible,
+.app-nav__link:focus-visible {
   outline: 2px solid currentColor;
-  outline-offset: -4px;
+  outline-offset: -2px;
 }
 
 .home-appearance-content {
@@ -84,85 +65,57 @@
   border-top: 1px solid #e5e4da;
 }
 
-.home-appearance-description {
-  color: #7a6e66;
+.app-nav__link {
+  border-radius: 8px;
 }
 
-
-/* =========================================
-   3. Colour palette buttons
-   ========================================= */
-
-.home-palette-option {
-  width: 100%;
-  height: 100%;
-  padding: 0.75rem;
-
-  background-color: white;
-  color: #2b2420;
-  border: 2px solid #e5e4da;
-  border-radius: 10px;
-
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-
-/* A border identifies the selected palette */
-.home-palette-option.is-selected {
-  border-color: #767676;
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-  background-color: #eeeeee;
-}
-
-.home-palette-option:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 3px;
-}
-
-.home-palette-preview {
-  display: flex;
-  height: 2rem;
-  margin-bottom: 0.75rem;
-
-  border: 1px solid #767676;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.home-palette-swatch {
-  flex: 1;
-}
-
-.home-palette-name {
-  font-weight: 600;
-}
-
-
-/* =========================================
-   4. Light mode — shared page elements
-   ========================================= */
-
+/* 3. Light mode */
 .light-mode {
   color-scheme: light;
+  --sk-bg: #f8f7f2;
+  --sk-surface: #ffffff;
+  --sk-border: #e5e4da;
+  --sk-text: #2b2420;
+  --sk-muted: #7a6e66;
+  --bs-body-bg: #f8f7f2;
+  --bs-body-color: #2b2420;
+  --bs-secondary-color: #7a6e66;
+  --bs-border-color: #e5e4da;
 }
 
-.light-mode body {
+.light-mode body,
+.light-mode #app,
+.light-mode .app-main {
   background-color: #f8f7f2;
   color: #2b2420;
 }
 
+/* Light mode — cards match page background */
 .light-mode .card,
 .light-mode .sk-card,
-.light-mode .list-group-item,
-.light-mode .modal-content,
-.light-mode .home-appearance,
-.light-mode .home-palette-option {
-  background-color: white;
+.light-mode .home-appearance {
+  background-color: #f8f7f2;
   color: #2b2420;
   border-color: #e5e4da;
+}
+
+/* Appearance settings blends into the page instead of the cards. */
+.light-mode .home-appearance {
+  background-color: #f8f7f2;
+  color: #2b2420;
+  border-color: #e5e4da;
+}
+
+.light-mode .home-appearance-content {
+  border-color: #e5e4da;
+}
+
+.light-mode .home-appearance-description {
+  color: #7a6e66;
+}
+
+.light-mode .home-appearance-toggle:hover {
+  background-color: #eeede7;
 }
 
 .light-mode .form-control,
@@ -176,21 +129,49 @@
   color: #6c757d;
 }
 
-.light-mode .home-palette-option.is-selected,
-.light-mode .home-appearance-toggle:hover {
-  background-color: #eeeeee;
+/* Original CartOut teal buttons, independent of colour palettes. */
+.btn-primary,
+.btn-success {
+  background-color: #0f5f60;
+  border-color: #0f5f60;
+  color: white;
 }
 
+.btn-primary:hover,
+.btn-success:hover {
+  background-color: #0b4b4c;
+  border-color: #0b4b4c;
+  color: white;
+}
 
-/* =========================================
-   5. Dark mode — shared page elements
-   ========================================= */
+.light-mode .app-nav__link {
+  color: #557a2b;
+}
 
+.light-mode .app-nav__link:hover,
+.light-mode .app-nav__link.router-link-exact-active {
+  background-color: #eef3e2;
+  color: #3f5c1f;
+}
+
+/* 4. Dark mode */
+/* Override the fixed light-mode colours from main.css. */
 .dark-mode {
   color-scheme: dark;
+  --sk-bg: #181818;
+  --sk-surface: #282828;
+  --sk-border: #666666;
+  --sk-text: #f5f5f5;
+  --sk-muted: #cccccc;
+  --bs-body-bg: #181818;
+  --bs-body-color: #f5f5f5;
+  --bs-secondary-color: #cccccc;
+  --bs-border-color: #666666;
 }
 
-.dark-mode body {
+.dark-mode body,
+.dark-mode #app,
+.dark-mode .app-main {
   background-color: #181818;
   color: whitesmoke;
 }
@@ -199,15 +180,39 @@
 .dark-mode .sk-card,
 .dark-mode .list-group-item,
 .dark-mode .modal-content,
-.dark-mode .home-appearance,
-.dark-mode .home-palette-option {
+.dark-mode .app-nav {
   background-color: #282828;
   color: whitesmoke;
   border-color: #666666;
 }
 
+.dark-mode .home-appearance {
+  background-color: #181818;
+  color: whitesmoke;
+  border-color: #666666;
+}
+
+.dark-mode .home-appearance-content,
+.dark-mode .modal-header,
+.dark-mode .modal-footer {
+  border-color: #666666;
+}
+
+.dark-mode .home-appearance-description,
+.dark-mode .home-appearance .form-label,
+.dark-mode .text-secondary,
+.dark-mode .text-muted,
+.dark-mode .text-muted-sk {
+  color: #cccccc !important;
+}
+
+.dark-mode .home-appearance-toggle:hover {
+  background-color: #303030;
+}
+
 .dark-mode .form-control,
-.dark-mode .form-select {
+.dark-mode .form-select,
+.dark-mode .input-group-text {
   background-color: #333333;
   color: whitesmoke;
   border-color: #888888;
@@ -217,32 +222,16 @@
   color: #bbbbbb;
 }
 
-.dark-mode .input-group-text {
-  background-color: #333333;
-  color: #cccccc;
-  border-color: #888888;
+.dark-mode .card-title,
+.dark-mode .card h1,
+.dark-mode .card h2,
+.dark-mode .card h3,
+.dark-mode .card h4,
+.dark-mode .card h5,
+.dark-mode .card h6 {
+  color: whitesmoke;
 }
 
-/* !important overrides Bootstrap text utilities */
-.dark-mode .text-secondary,
-.dark-mode .text-muted,
-.dark-mode .text-muted-sk,
-.dark-mode .home-appearance-description {
-  color: #cccccc !important;
-}
-
-.dark-mode .home-appearance-content,
-.dark-mode .modal-header,
-.dark-mode .modal-footer {
-  border-color: #666666;
-}
-
-.dark-mode .home-palette-option.is-selected,
-.dark-mode .home-appearance-toggle:hover {
-  background-color: #404040;
-}
-
-/* Make the modal close icon visible */
 .dark-mode .btn-close {
   filter: invert(1) grayscale(100%) brightness(200%);
 }
@@ -254,270 +243,21 @@
 
 .dark-mode .btn-outline-secondary:hover {
   background-color: #555555;
-  border-color: #999999;
   color: white;
 }
 
-
-/* =========================================
-   6. Default palette
-   ========================================= */
-
-
-
-.theme-default .btn-primary,
-.theme-default .btn-success {
-  background-color: #0f5f60;
-  border-color: #0f5f60;
-  color: white;
-}
-
-.theme-default .btn-primary:hover,
-.theme-default .btn-success:hover {
-  background-color: #0b4b4c;
-  border-color: #0b4b4c;
-}
-
-
-/* =========================================
-   7. Light Steel palette
-   ========================================= */
-
-.light-mode.theme-steel body {
-  background-color: #e9ecef;
-}
-
-.theme-steel .btn-primary,
-.theme-steel .btn-success {
-  background-color: #495057;
-  border-color: #495057;
-  color: white;
-}
-
-.theme-steel .btn-primary:hover,
-.theme-steel .btn-success:hover {
-  background-color: #343a40;
-  border-color: #343a40;
-}
-
-
-/* =========================================
-   8. Teal Lemon Frost palette
-   ========================================= */
-
-.light-mode.theme-teal body {
-  background-color: #f4f4f8;
-}
-
-.theme-teal .btn-primary,
-.theme-teal .btn-success {
-  background-color: #007f91;
-  border-color: #007f91;
-  color: white;
-}
-
-.theme-teal .btn-primary:hover,
-.theme-teal .btn-success:hover {
-  background-color: #006373;
-  border-color: #006373;
-}
-
-
-/* =========================================
-   9. Fiesta Flamingo palette
-   ========================================= */
-
-.light-mode.theme-flamingo body {
-  background-color: #fff0ed;
-}
-
-.theme-flamingo .btn-primary,
-.theme-flamingo .btn-success {
-  background-color: #ad1630;
-  border-color: #ad1630;
-  color: white;
-}
-
-.theme-flamingo .btn-primary:hover,
-.theme-flamingo .btn-success:hover {
-  background-color: #861125;
-  border-color: #861125;
-}
-
-
-/* =========================================
-   10. Golden Sunrise palette
-   ========================================= */
-
-.light-mode.theme-sunrise body {
-  background-color: #f2f1e6;
-}
-
-.theme-sunrise .btn-primary,
-.theme-sunrise .btn-success {
-  background-color: #79345f;
-  border-color: #79345f;
-  color: white;
-}
-
-.theme-sunrise .btn-primary:hover,
-.theme-sunrise .btn-success:hover {
-  background-color: #5b2747;
-  border-color: #5b2747;
-}
-
-
-/* =========================================
-   11. Keep selection borders visible
-   These rules come after the mode rules.
-   ========================================= */
-
-.home-palette-option.is-selected,
-.home-palette-option:hover {
-  border-color: currentColor;
-}
-
-/* =========================================
-   12. Navigation: light and dark mode
-   ========================================= */
-
-.light-mode .app-nav[aria-label="Main"] {
-  background-color: white;
-  border-color: #e5e4da;
-}
-
-.dark-mode .app-nav[aria-label="Main"] {
-  background-color: #282828;
-  border-color: #666666;
-}
-
-.app-nav__link {
-  border-radius: 8px;
-}
-
-/* Show an outline when using the keyboard */
-.app-nav__link:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
-
-/* =========================================
-   13. Navigation: light-mode palettes
-   ========================================= */
-
-/* Default */
-.light-mode.theme-default .app-nav__link {
-  color: #557a2b;
-}
-
-.light-mode.theme-default .app-nav__link:hover,
-.light-mode.theme-default .app-nav__link.router-link-exact-active {
-  background-color: #eef3e2;
-  color: #3f5c1f;
-}
-
-/* Light Steel */
-.light-mode.theme-steel .app-nav__link {
-  color: #495057;
-}
-
-.light-mode.theme-steel .app-nav__link:hover,
-.light-mode.theme-steel .app-nav__link.router-link-exact-active {
-  background-color: #e9ecef;
-  color: #343a40;
-}
-
-/* Teal Lemon Frost */
-.light-mode.theme-teal .app-nav__link {
-  color: #007f91;
-}
-
-.light-mode.theme-teal .app-nav__link:hover,
-.light-mode.theme-teal .app-nav__link.router-link-exact-active {
-  background-color: #fff0b3;
-  color: #005766;
-}
-
-/* Fiesta Flamingo */
-.light-mode.theme-flamingo .app-nav__link {
-  color: #ad1630;
-}
-
-.light-mode.theme-flamingo .app-nav__link:hover,
-.light-mode.theme-flamingo .app-nav__link.router-link-exact-active {
-  background-color: #fce4e8;
-  color: #861125;
-}
-
-/* Golden Sunrise */
-.light-mode.theme-sunrise .app-nav__link {
-  color: #79345f;
-}
-
-.light-mode.theme-sunrise .app-nav__link:hover,
-.light-mode.theme-sunrise .app-nav__link.router-link-exact-active {
-  background-color: #f5f76b;
-  color: #5b2747;
-}
-
-
-/* =========================================
-   14. Navigation: dark-mode palettes
-   ========================================= */
-
-/* Default */
-.dark-mode.theme-default .app-nav__link {
+.dark-mode .app-nav__link {
   color: #bddb96;
 }
 
-.dark-mode.theme-default .app-nav__link:hover,
-.dark-mode.theme-default .app-nav__link.router-link-exact-active {
+.dark-mode .app-nav__link:hover,
+.dark-mode .app-nav__link.router-link-exact-active {
   background-color: #344529;
   color: #e2f2ce;
 }
 
-/* Light Steel */
-.dark-mode.theme-steel .app-nav__link {
-  color: #ced4da;
-}
 
-.dark-mode.theme-steel .app-nav__link:hover,
-.dark-mode.theme-steel .app-nav__link.router-link-exact-active {
-  background-color: #41474d;
-  color: white;
+.light-mode .card,
+.light-mode .home-appearance {
+  border-color: #c5c3bb;
 }
-
-/* Teal Lemon Frost */
-.dark-mode.theme-teal .app-nav__link {
-  color: #80dce5;
-}
-
-.dark-mode.theme-teal .app-nav__link:hover,
-.dark-mode.theme-teal .app-nav__link.router-link-exact-active {
-  background-color: #16454d;
-  color: #ffdc65;
-}
-
-/* Fiesta Flamingo */
-.dark-mode.theme-flamingo .app-nav__link {
-  color: #ffabb9;
-}
-
-.dark-mode.theme-flamingo .app-nav__link:hover,
-.dark-mode.theme-flamingo .app-nav__link.router-link-exact-active {
-  background-color: #552832;
-  color: #ffdce3;
-}
-
-/* Golden Sunrise */
-.dark-mode.theme-sunrise .app-nav__link {
-  color: #e6aed2;
-}
-
-.dark-mode.theme-sunrise .app-nav__link:hover,
-.dark-mode.theme-sunrise .app-nav__link.router-link-exact-active {
-  background-color: #4c2d42;
-  color: #f5f76b;
-}
-
