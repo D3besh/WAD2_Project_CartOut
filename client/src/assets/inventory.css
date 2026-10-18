@@ -1,0 +1,323 @@
+/* =========================================================================
+   Inventory styles: Materials page + Products page
+   -------------------------------------------------------------------------
+   Uses the design tokens from main.css (--sk-brand, --sk-border, ...),
+   so it matches the Order log. Import it once, right after main.css.
+
+   1. Toolbar      – filter chips + search, in one card (like the Order log)
+   2. Banners      – low stock (warn), forecast (info), can't make (warn)
+   3. Cards        – material card and product card
+   4. Capacity     – the "Can make now" box on product cards
+   5. Pop-ups      – rounded modal, recipe rows, variant boxes
+   ========================================================================= */
+
+/* ---------- 0. Guard ----------
+   Something global in the project restyles every .btn (teal, full width).
+   On these two pages, put Bootstrap's own button colours back.
+   .inv-page .btn is more specific than .btn, so this wins wherever the other rule is. */
+.inv-page .btn {
+  width: auto;
+  background-color: var(--bs-btn-bg);
+  color: var(--bs-btn-color);
+  border-color: var(--bs-btn-border-color);
+}
+.inv-page .btn:hover {
+  background-color: var(--bs-btn-hover-bg);
+  color: var(--bs-btn-hover-color);
+  border-color: var(--bs-btn-hover-border-color);
+}
+.inv-page .page-header .btn { flex-shrink: 0; }
+.inv-page .btn { padding: 0.5rem 1.15rem; font-size: 0.95rem; line-height: 1.4; }
+.inv-page .btn-sm { padding: 0.3rem 0.9rem; font-size: 0.85rem; }
+
+/* ---------- 1. Toolbar ---------- */
+.inv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 1.15rem;
+}
+.inv-toolbar .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.inv-search { max-width: 260px; width: 100%; }
+.inv-search.form-control { padding-block: 0.45rem; }
+
+/* ---------- 2. Banners ---------- */
+.inv-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  border-radius: var(--sk-radius);
+  padding: 0.9rem 1.15rem;
+  border: 1px solid transparent;
+}
+.inv-banner__title { font-weight: 700; margin: 0; }
+.inv-banner ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
+.inv-banner li + li { margin-top: 0.25rem; }
+.inv-banner .btn-close { flex-shrink: 0; }
+
+.inv-banner--warn { background: var(--sk-warn-soft); color: var(--sk-warn); border-color: rgb(168 101 15 / 0.18); }
+.inv-banner--warn strong { color: var(--sk-text); }
+
+.inv-banner--info { background: var(--sk-brand-soft); color: var(--sk-brand-dark); border-color: rgb(85 122 43 / 0.18); }
+.inv-banner--info .inv-hint { color: var(--sk-muted); }
+
+/* "Show 4 more" link at the bottom of a banner */
+.inv-page .inv-more {
+  padding: 0;
+  margin-top: 0.5rem;
+  border: none;
+  background: none;
+  color: var(--sk-brand-dark);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.inv-page .inv-more:hover { color: var(--sk-brand); background: none; }
+
+.inv-banner--danger { background: var(--sk-danger-soft); color: var(--sk-danger); border-color: rgb(192 57 43 / 0.18); }
+
+/* ---------- 3. Cards ---------- */
+.inv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  height: 100%;
+}
+.inv-card.is-low { border-color: rgb(192 57 43 / 0.35); }
+
+.inv-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.inv-card__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+  line-height: 1.3;
+  min-width: 0;
+}
+.inv-card__price { font-weight: 800; white-space: nowrap; }
+.inv-card__body { flex: 1; display: flex; flex-direction: column; gap: 0.35rem; }
+
+/* Pushes the buttons to the bottom so every card in a row lines up */
+.inv-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+.inv-card__actions .btn { flex: 1; }
+
+/* Big stock number: "3000 g" */
+.inv-qty {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.inv-qty small { font-size: 0.9rem; font-weight: 600; color: var(--sk-muted); margin-left: 0.2rem; }
+.inv-level { text-transform: capitalize; }
+
+.inv-meta { font-size: 0.85rem; color: var(--sk-muted); margin: 0; }
+.inv-meta strong { color: var(--sk-text); font-weight: 600; }
+
+/* Stock bar under the number. Full bar = 3× the low-stock level. */
+.inv-meter {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--sk-bg);
+  border: 1px solid var(--sk-border);
+  overflow: hidden;
+}
+.inv-meter span { display: block; height: 100%; border-radius: 999px; background: var(--sk-ok); }
+.inv-meter span.is-low { background: var(--sk-danger); }
+
+/* "Used in" line: quiet, wraps neatly */
+.inv-used {
+  font-size: 0.8rem;
+  color: var(--sk-muted);
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--sk-border);
+}
+
+/* "Runs low: Sat, 17 Oct" line from the forecast */
+.inv-forecast {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: flex-start;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--sk-warn);
+  background: var(--sk-warn-soft);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+}
+
+/* ---------- 4. Capacity box on product cards ---------- */
+/* Product cards keep their own height (no stretching to the tallest card) */
+.inv-grid-top { align-items: start; }
+.inv-grid-top .inv-card { height: auto; }
+
+/* Right-aligned, normal-width button row (product cards) */
+.inv-card__actions--end { justify-content: flex-end; }
+.inv-card__actions--end .btn { flex: 0 0 auto; }
+
+/* "⏱ 60 min · $8.50 profit each" */
+.inv-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--sk-muted);
+  margin: -0.2rem 0 0;
+}
+
+.inv-capacity {
+  background: var(--sk-bg);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius-sm);
+  padding: 0.75rem 0.9rem;
+}
+.inv-capacity__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.inv-capacity__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sk-muted);
+  white-space: nowrap;
+}
+.inv-capacity > .inv-capacity__label { margin-bottom: 0.4rem; }
+
+/* No variants: "18  with current stock" */
+.inv-cap-single { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
+.inv-cap-single .cap-num { font-size: 2rem; line-height: 1; }
+.inv-cap-single__unit { color: var(--sk-muted); font-size: 0.9rem; }
+
+/* With variants: a simple list */
+.inv-cap-list { list-style: none; margin: 0; padding: 0; }
+.inv-cap-row { padding-block: 0.35rem; }
+.inv-cap-row + .inv-cap-row { border-top: 1px solid var(--sk-border); }
+
+/* "Limited by Butter", said once under the list */
+.inv-cap-foot {
+  font-size: 0.82rem;
+  color: var(--sk-muted);
+  margin: 0.5rem 0 0;
+}
+.inv-cap-foot strong { color: var(--sk-text); }
+.inv-cap-row__main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.inv-cap-row__name { font-weight: 600; min-width: 0; }
+.inv-cap-row__name .price { color: var(--sk-muted); font-weight: 500; font-size: 0.85rem; margin-left: 0.25rem; }
+.inv-cap-row__note { font-size: 0.8rem; color: var(--sk-muted); }
+.inv-cap-row__warn { font-size: 0.8rem; color: var(--sk-warn); margin: 0.4rem 0 0; }
+
+/* The "can make" number. Colour + the "Limited by" text carry the meaning together. */
+.cap-num { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cap--ok { color: var(--sk-ok); }
+.cap--warn { color: var(--sk-warn); }
+.cap--danger { color: var(--sk-danger); }
+.cap--none { color: var(--sk-muted); }
+
+/* ---------- 5. Pop-ups ---------- */
+.inv-modal { background: rgb(43 36 32 / 0.45); overflow-y: auto; }
+.inv-modal .modal-content {
+  border: none;
+  border-radius: var(--sk-radius);
+  box-shadow: var(--sk-shadow-lift);
+}
+.inv-modal .modal-header,
+.inv-modal .modal-footer { border-color: var(--sk-border); padding-inline: 1.25rem; }
+.inv-modal .modal-body { padding: 1.1rem 1.25rem; }
+.inv-modal .modal-title { font-weight: 800; letter-spacing: -0.01em; }
+
+.inv-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 1.4rem 0 0.25rem;
+}
+.inv-section-title .hint { font-weight: 500; color: var(--sk-muted); font-size: 0.85rem; }
+
+/* One recipe line: [material ▾] [amount] unit  ✕ */
+.inv-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 52px auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.inv-line .unit { color: var(--sk-muted); font-size: 0.85rem; }
+
+/* Small round ✕ button for removing a row */
+.inv-page .inv-remove {
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--sk-muted);
+}
+.inv-page .inv-remove:hover { color: var(--sk-danger); }
+
+/* One variant inside the product form */
+.inv-variant {
+  background: var(--sk-bg);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius-sm);
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.inv-variant__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px 130px auto;
+  align-items: end;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.inv-variant .form-label { font-size: 0.8rem; color: var(--sk-muted); margin-bottom: 0.2rem; }
+
+/* Segmented choice for "How do you track it?" */
+.inv-segment { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Shopping list rows */
+.inv-shop-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--sk-border);
+}
+.inv-shop-row:last-child { border-bottom: none; }
+
+/* Phones: stack the form grids */
+@media (max-width: 575.98px) {
+  .inv-search { max-width: none; }
+  .inv-line { grid-template-columns: minmax(0, 1fr) 90px auto; }
+  .inv-line .unit { display: none; }
+  .inv-variant__fields { grid-template-columns: 1fr 1fr; }
+  .inv-variant__fields > :first-child { grid-column: 1 / -1; }
+}
