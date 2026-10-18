@@ -21,7 +21,8 @@ import Material from '../models/Material.js';
 // -----------------------------------------------------
 // STEP 1: work out how much of each material an order needs
 // -----------------------------------------------------
-// items    = order.items, e.g. [{ product: <id>, variant: 'Oat milk', quantity: 2 }]
+// items    = order.items, e.g. [{ product: <id>, variantId: <id>, variant: 'Oat milk', quantity: 2 }]
+//            variantId null = "Regular" (main recipe only)
 // products = the products used in this order (from the database)
 // Returns a list like [{ material: <id>, amount: 560 }, ...]
 export function materialsNeeded(items, products) {
@@ -35,9 +36,16 @@ export function materialsNeeded(items, products) {
     }
 
     // Main recipe + the chosen variant's extras.
-    // If the variant can't be found (e.g. it was renamed), just use the main recipe.
+    // Find the variant by its ID, so it still matches after the seller renames it.
+    // Orders logged before variants had IDs only store the name, so fall back to that.
+    // No variant (Regular), or a variant that no longer exists → main recipe only.
     let lines = product.recipe;
-    let variant = product.variants.find((v) => v.name === item.variant);
+    let variant = null;
+    if (item.variantId) {
+      variant = product.variants.find((v) => String(v._id) === String(item.variantId));
+    } else if (item.variant) {
+      variant = product.variants.find((v) => v.name === item.variant);
+    }
     if (variant) {
       lines = product.recipe.concat(variant.extras);
     }

@@ -6,7 +6,8 @@ const orderItemSchema = new mongoose.Schema(
     // Which variant was ordered. variantId points at product.variants[]._id;
     // variant and unitPrice are copies taken when the order is saved, so the
     // order still reads correctly if the seller later renames or reprices it.
-    variantId: { type: mongoose.Schema.Types.ObjectId },
+    // variantId null = "Regular" (the plain product, main recipe only).
+    variantId: { type: mongoose.Schema.Types.ObjectId, default: null },
     variant: { type: String, trim: true },
     unitPrice: { type: Number, min: 0 },
     quantity: { type: Number, required: true, min: 1 },
