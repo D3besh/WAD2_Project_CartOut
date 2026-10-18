@@ -53,7 +53,8 @@ Return ONLY JSON in this shape:
 Rules: use null when something is not stated and never invent values.
 Do not guess prices. Convert number words to integers ("a dozen" = 12).
 Match variants only when the customer explicitly states one. Never invent a variant.
-Do not include words like "regular" and "normal" as variants.
+If the customer explicitly asks for the regular, normal, plain or original version,
+set "variant" to "Regular". If they say nothing about the version, use null.
 Resolve relative dates and times using today's date.
 Examples:
 - "tomorrow" = the day after today's date
