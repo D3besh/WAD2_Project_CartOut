@@ -10,26 +10,6 @@ const open = ref(false)
 const root = ref(null)
 const user = ref(null)
 
-//light dark toggle
-const isDarkMode = ref(
-  localStorage.getItem('cartoutMode') === 'dark'
-)
-
-function toggleTheme() {
-  isDarkMode.value = !isDarkMode.value
-
-  const mode = isDarkMode.value ? 'dark' : 'light'
-
-  document.documentElement.classList.remove(
-    'light-mode',
-    'dark-mode'
-  )
-
-  document.documentElement.classList.add(mode + '-mode')
-
-  localStorage.setItem('cartoutMode', mode)
-}
-
 
 // logout confirm dialog state
 const showConfirm = ref(false)
@@ -127,26 +107,6 @@ onBeforeUnmount(() => {
 
         <RouterLink to="/profile" class="item" role="menuitem">View profile</RouterLink>
         <RouterLink to="/profile/edit" class="item" role="menuitem">Edit profile</RouterLink>
-        <div class="theme-setting d-flex align-items-center justify-content-between">
-          <div>
-            <div>App theme</div>
-            <small class="muted">
-              {{ isDarkMode ? 'Dark mode' : 'Light mode' }}
-            </small>
-          </div>
-
-          <div class="form-check form-switch mb-0">
-            <input
-              id="profile-theme-switch"
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-              aria-label="Dark mode"
-              :checked="isDarkMode"
-              @change="toggleTheme"
-            />
-          </div>
-        </div>
         <button type="button" class="item" role="menuitem" @click="askLogout">Log out</button>
       </div>
     </Transition>
@@ -328,9 +288,4 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.theme-setting {
-  padding: 0.65rem 1rem;
-  border-top: 1px solid var(--sk-border);
-  border-bottom: 1px solid var(--sk-border);
-}
 </style>
