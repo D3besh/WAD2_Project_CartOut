@@ -85,8 +85,9 @@ function closeHamburger() {
   width: 100%;
   background-color: var(--sk-surface);
   border-bottom: 1px solid var(--sk-border);
-  position: relative;
-  z-index: 20;
+  position: sticky;
+  top: 0;
+  z-index: 1020;
   padding: 0.75rem 0;
 }
 
@@ -113,7 +114,6 @@ function closeHamburger() {
   font-weight: 700;
 }
 
-/* Ensure collapse occupies a full row below lg */
 @media (max-width: 991.98px) {
   .navbar-collapse {
     flex-basis: 100%;
