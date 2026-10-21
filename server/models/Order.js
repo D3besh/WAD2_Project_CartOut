@@ -34,10 +34,23 @@ const orderSchema = new mongoose.Schema(
     deliveryAddress: { type: String, trim: true },
     dueAt: { type: Date, required: true },
 
-    status: { type: String, enum: ['in-progress', 'ready', 'completed'], default: 'in-progress' },
+    status: {
+      type: String,
+      enum: ['in-progress', 'ready', 'completed', 'cancelled'],
+      default: 'in-progress',
+    },
 
     rawMessage: { type: String }, // the pasted customer message, kept for reference
     materialsDeducted: { type: Boolean, default: false }, // so cancellations can restore stock
+
+    // ---- Disputes: cancellations and refunds ----
+    cancelReason: { type: String, trim: true },
+    cancelledAt: { type: Date },
+    materialsWasted: { type: Boolean, default: false }, // cancelled after materials were used
+    forfeitedAmount: { type: Number, min: 0, default: 0 }, // deposit kept after a cancellation
+    refundAmount: { type: Number, min: 0, default: 0 },
+    refundReason: { type: String, trim: true },
+    refundedAt: { type: Date },
   },
   { timestamps: true }
 );

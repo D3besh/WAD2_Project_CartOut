@@ -31,40 +31,6 @@
   border-color: #565e64;
 }
 
-/* 2. Collapsible appearance settings */
-.home-appearance {
-  border: 1px solid #e5e4da;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.home-appearance-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
-  padding: 1rem;
-  background-color: transparent;
-  color: inherit;
-  border: 0;
-  font: inherit;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-
-.home-appearance-toggle:focus-visible,
-.app-nav__link:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: -2px;
-}
-
-.home-appearance-content {
-  padding: 1rem;
-  border-top: 1px solid #e5e4da;
-}
-
 .app-nav__link {
   border-radius: 8px;
 }
@@ -92,30 +58,10 @@
 
 /* Light mode — cards match page background */
 .light-mode .card,
-.light-mode .sk-card,
-.light-mode .home-appearance {
+.light-mode .sk-card {
   background-color: #f8f7f2;
   color: #2b2420;
   border-color: #e5e4da;
-}
-
-/* Appearance settings blends into the page instead of the cards. */
-.light-mode .home-appearance {
-  background-color: #f8f7f2;
-  color: #2b2420;
-  border-color: #e5e4da;
-}
-
-.light-mode .home-appearance-content {
-  border-color: #e5e4da;
-}
-
-.light-mode .home-appearance-description {
-  color: #7a6e66;
-}
-
-.light-mode .home-appearance-toggle:hover {
-  background-color: #eeede7;
 }
 
 .light-mode .form-control,
@@ -179,35 +125,22 @@
 .dark-mode .card,
 .dark-mode .sk-card,
 .dark-mode .list-group-item,
-.dark-mode .modal-content,
-.dark-mode .app-nav {
+.dark-mode .modal-content {
   background-color: #282828;
   color: whitesmoke;
   border-color: #666666;
 }
 
-.dark-mode .home-appearance {
-  background-color: #181818;
-  color: whitesmoke;
-  border-color: #666666;
-}
 
-.dark-mode .home-appearance-content,
 .dark-mode .modal-header,
 .dark-mode .modal-footer {
   border-color: #666666;
 }
 
-.dark-mode .home-appearance-description,
-.dark-mode .home-appearance .form-label,
 .dark-mode .text-secondary,
 .dark-mode .text-muted,
 .dark-mode .text-muted-sk {
   color: #cccccc !important;
-}
-
-.dark-mode .home-appearance-toggle:hover {
-  background-color: #303030;
 }
 
 .dark-mode .form-control,
@@ -246,18 +179,110 @@
   color: white;
 }
 
-.dark-mode .app-nav__link {
-  color: #bddb96;
-}
-
-.dark-mode .app-nav__link:hover,
-.dark-mode .app-nav__link.router-link-exact-active {
-  background-color: #344529;
-  color: #e2f2ce;
-}
-
-
-.light-mode .card,
-.light-mode .home-appearance {
+.light-mode .card {
   border-color: #c5c3bb;
 }
+
+/* Dashboard profit graph */
+.profit-line-chart {
+  display: block;
+  width: 100%;
+  min-width: 520px;
+  height: auto;
+  color: inherit;
+}
+
+.profit-chart-grid {
+  stroke: currentColor;
+  opacity: 0.15;
+}
+
+.profit-chart-zero {
+  stroke: currentColor;
+  opacity: 0.4;
+  stroke-dasharray: 4 4;
+}
+
+.profit-chart-label {
+  fill: currentColor;
+  font-size: 11px;
+}
+
+.profit-chart-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.profit-chart-point {
+  fill: currentColor;
+}
+
+
+/* =========================================
+   Navbar: Light and Dark Mode
+   ========================================= */
+
+/* Light mode */
+.light-mode .app-nav,
+.light-mode .app-header {
+  background-color: #ffffff;
+  border-color: #e5e4da;
+}
+
+/* Dark mode */
+.dark-mode .app-nav,
+.dark-mode .app-header {
+  background-color: #171717;
+  border-color: #404040;
+}
+
+/* Dark mode navigation links */
+.dark-mode .app-nav__link {
+  color: #d9e5c6;
+}
+
+.dark-mode .app-nav__link:hover {
+  background-color: #262626;
+}
+
+.dark-mode .app-nav__link.router-link-exact-active {
+  background-color: #3a4833;
+  color: #e5f2d7;
+}
+
+
+/* Profile dropdown: Dark mode */
+
+.dark-mode .profile-menu .dropdown {
+  background-color: #171717;
+  color: #f5f5f5;
+  border-color: #404040;
+}
+
+.dark-mode .profile-menu .dropdown-header {
+  border-color: #404040;
+}
+
+.dark-mode .profile-menu .muted {
+  color: #b8b8b8;
+}
+
+.dark-mode .profile-menu .item {
+  color: #f5f5f5;
+}
+
+.dark-mode .profile-menu .item:hover {
+  background-color: #262626;
+}
+
+.dark-mode .profile-menu .logout-dialog {
+  background-color: #262626;
+  color: #f5f5f5;
+}
+
+
+
+
