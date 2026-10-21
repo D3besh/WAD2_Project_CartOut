@@ -1,9 +1,13 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
 import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
+
+const route = useRoute();   // the current address (to read ?add=1)
+const router = useRouter(); // to change the address
 
 // =====================================================
 // 1. DATA
@@ -37,7 +41,22 @@ async function loadData() {
 
 onMounted(() => {
   loadData();
+  openFormFromLink(); // opened from the floating "+" button?
 });
+
+// The floating "+" button links here with ?add=1 (e.g. /materials?add=1).
+// When we see it, open the Add pop-up, then remove ?add=1 from the address
+// so refreshing the page doesn't open the pop-up again.
+function openFormFromLink() {
+  if (route.query.add === '1') {
+    openAddForm();
+    router.replace({ query: {} });
+  }
+}
+
+// Also works when you're already on this page and press the floating button
+// (the page doesn't reload, only the ?add=1 part of the address changes)
+watch(() => route.query.add, openFormFromLink);
 
 function getErrorText(error) {
   if (error.response && error.response.data && error.response.data.message) {

@@ -65,6 +65,17 @@
 .inv-banner--info { background: var(--sk-brand-soft); color: var(--sk-brand-dark); border-color: rgb(85 122 43 / 0.18); }
 .inv-banner--info .inv-hint { color: var(--sk-muted); }
 
+/* "Forecast accuracy: ..." line under the forecast banner */
+.inv-accuracy {
+  font-size: 0.85rem;
+  color: var(--sk-muted);
+  background: var(--sk-surface);
+  border: 1px dashed var(--sk-border);
+  border-radius: var(--sk-radius-sm);
+  padding: 0.6rem 0.9rem;
+}
+.inv-accuracy strong { color: var(--sk-text); }
+
 /* "Show 4 more" link at the bottom of a banner */
 .inv-page .inv-more {
   padding: 0;

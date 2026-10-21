@@ -1,8 +1,12 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import MaterialCard from '../components/MaterialCard.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
+
+const route = useRoute();   // the current address (to read ?add=1)
+const router = useRouter(); // to change the address
 
 // =====================================================
 // 1. DATA
@@ -75,7 +79,22 @@ async function reloadAll() {
 // Run once when the page opens
 onMounted(() => {
   reloadAll();
+  openFormFromLink(); // opened from the floating "+" button?
 });
+
+// The floating "+" button links here with ?add=1 (e.g. /materials?add=1).
+// When we see it, open the Add pop-up, then remove ?add=1 from the address
+// so refreshing the page doesn't open the pop-up again.
+function openFormFromLink() {
+  if (route.query.add === '1') {
+    openAddForm();
+    router.replace({ query: {} });
+  }
+}
+
+// Also works when you're already on this page and press the floating button
+// (the page doesn't reload, only the ?add=1 part of the address changes)
+watch(() => route.query.add, openFormFromLink);
 
 // Our server sends a friendly message (e.g. "Remove it from these products first").
 // It is inside error.response.data.message. If it's not there, use error.message.
@@ -329,6 +348,20 @@ async function saveRestock() {
       </div>
     </div>
 
+    <!-- How accurate the forecast has been (backtest on the last 4 weeks) -->
+    <p v-if="forecast !== null && forecast.accuracy !== null" class="inv-accuracy mb-3">
+      🎯 <strong>Forecast accuracy:</strong>
+      tested on the last {{ forecast.accuracy.testDays / 7 }} weeks, it was usually within
+      <strong>{{ forecast.accuracy.errorPercent }}%</strong> of what you actually used each day.
+      <span v-if="forecast.accuracy.improvementPercent > 0">
+        That's {{ forecast.accuracy.improvementPercent }}% more accurate than a simple average
+        ({{ forecast.accuracy.simpleErrorPercent }}% off).
+      </span>
+      <span v-else>
+        (A simple average was {{ forecast.accuracy.simpleErrorPercent }}% off.)
+      </span>
+    </p>
+
     <!-- No order history yet = nothing to learn from -->
     <p v-if="forecast !== null && forecast.historyOrderCount === 0" class="inv-meta mb-3">
       📅 The forecast starts working once you have some completed orders.
@@ -377,7 +410,11 @@ async function saveRestock() {
             Low below {{ m.lowStockThreshold }} {{ m.unit }}
           </p>
           <!-- From the forecast -->
-          <span v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="inv-forecast">
+          <span
+            v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn"
+            class="inv-forecast"
+            :title="forecastFor(m.id).accuracy ? 'Forecast is usually within ' + forecastFor(m.id).accuracy.errorPercent + '% for this material' : ''"
+          >
             📅 Runs low {{ formatDay(forecastFor(m.id).runsLowOn) }}
           </span>
         </template>
