@@ -1,10 +1,13 @@
 <script setup>
 // The In progress → Ready → Completed tracker.
 // Used as a filter in the Order Log and as a status control in Order Detail.
+// Pass :disabled="true" to lock it (e.g. cancelled orders).
 const props = defineProps({
   modelValue: { type: String, default: 'in-progress' },
+  disabled: { type: Boolean, default: false },
 });
 defineEmits(['update:modelValue']);
+
 
 const stages = [
   { value: 'in-progress', label: 'In progress' },
@@ -12,9 +15,11 @@ const stages = [
   { value: 'completed', label: 'Completed' },
 ];
 
+
 function stateOf(index) {
   const current = stages.findIndex((s) => s.value === props.modelValue);
   const last = stages.length - 1;
+
 
   if (index < current) return 'is-done';
   if (index === current && current === last) return 'is-done'; // final step = finished
@@ -23,6 +28,7 @@ function stateOf(index) {
 }
 </script>
 
+
 <template>
   <div class="stage-tracker" role="group" aria-label="Order stage">
     <button
@@ -30,9 +36,10 @@ function stateOf(index) {
       :key="stage.value"
       type="button"
       class="step"
-      :class="stateOf(i)"
+      :class="[stateOf(i), { 'is-locked': disabled }]"
       :aria-pressed="modelValue === stage.value"
       :data-testid="`stage-${stage.value}`"
+      :disabled="disabled"
       @click="$emit('update:modelValue', stage.value)"
     >
       <span class="dot">
@@ -44,11 +51,13 @@ function stateOf(index) {
   </div>
 </template>
 
+
 <style scoped>
 .stage-tracker {
   display: flex;
   width: 100%;
 }
+
 
 .step {
   position: relative;
@@ -64,6 +73,7 @@ function stateOf(index) {
   color: var(--sk-muted);
   font-family: inherit;
 }
+
 
 /* connecting line, drawn from the previous dot to this one */
 .step:not(:first-child)::before {
@@ -82,6 +92,7 @@ function stateOf(index) {
   background: var(--sk-brand);
 }
 
+
 .dot {
   position: relative;
   z-index: 1;
@@ -98,9 +109,11 @@ function stateOf(index) {
   transition: all 0.25s ease;
 }
 
+
 .step:hover .dot {
   border-color: var(--sk-brand);
 }
+
 
 .step.is-done .dot {
   background: var(--sk-brand);
@@ -108,11 +121,13 @@ function stateOf(index) {
   color: #fff;
 }
 
+
 .step.is-active .dot {
   border-color: var(--sk-brand);
   color: var(--sk-brand);
   box-shadow: 0 0 0 4px var(--sk-brand-soft);
 }
+
 
 .label {
   font-size: 0.85rem;
@@ -123,8 +138,18 @@ function stateOf(index) {
   color: var(--sk-text);
 }
 
+
 .step:focus-visible .dot {
   outline: 2px solid var(--sk-brand);
   outline-offset: 3px;
+}
+
+/* locked (e.g. cancelled order): can't be clicked */
+.step.is-locked {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.step.is-locked:hover .dot {
+  border-color: var(--sk-border);
 }
 </style>

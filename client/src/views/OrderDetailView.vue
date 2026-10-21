@@ -3,6 +3,8 @@ import { computed, ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import StageTracker from '../components/StageTracker.vue';
+import PaymentTracker from '../components/PaymentTracker.vue';
+import DisputeCard from '../components/DisputeCard.vue';
 import ShareMessage from '../components/ShareMessage.vue';
 
 const route = useRoute();
@@ -12,41 +14,25 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
 const message = ref('');
-const copied = ref(false);
 
-// payment
-const paymentOptions = [
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'deposit', label: 'Deposit' },
-  { value: 'paid', label: 'Paid' },
-];
-const paymentChoice = ref('unpaid');
-const depositInput = ref('');
-const savingPayment = ref(false);
-const paymentSaved = ref(false);
+const isCancelled = computed(() => order.value?.status === 'cancelled');
 
-// Which buttons are locked (greyed out), based on the saved payment status:
-//   unpaid  -> only Unpaid
-//   deposit -> Unpaid and Deposit
-//   paid    -> all of them
-function isDisabled(value) {
-  if (savingPayment.value) return true;
+// Payment can't be edited after a cancellation or refund (the server blocks it too)
+const paymentLocked = computed(() => {
+  if (!order.value) return false;
+  return (
+    order.value.status === 'cancelled' ||
+    order.value.refundAmount > 0 ||
+    order.value.forfeitedAmount > 0
+  );
+});
 
-  const saved = order.value?.paymentStatus || 'unpaid';
-
-  if (saved === 'paid') return true;
-  if (saved === 'deposit') return value === 'unpaid' || value === 'deposit';
-  return value === 'unpaid';
-}
-
-// the deposit box only shows when switching to deposit from unpaid
-const showDepositBox = computed(
-  () => paymentChoice.value === 'deposit' && order.value?.paymentStatus !== 'deposit'
-);
-
-const balance = computed(() => {
-  if (!order.value) return 0;
-  return Math.max(order.value.price - (order.value.depositAmount || 0), 0);
+// 4th step on the payment tracker, only if it really happened
+const paymentOutcome = computed(() => {
+  if (!order.value) return '';
+  if (order.value.refundAmount > 0) return 'refunded';
+  if (order.value.status === 'cancelled') return 'cancelled';
+  return '';
 });
 
 const itemText = computed(() => {
@@ -79,6 +65,9 @@ const generated = computed(() => {
   const name = order.value.customerName;
   const how = order.value.fulfilmentMethod === 'delivery' ? 'delivering to you' : 'ready for you to collect';
 
+  if (status.value === 'cancelled') {
+    return `Hi ${name}, your order of ${itemText.value} has been cancelled. Please reach out if you have any questions.`;
+  }
   if (status.value === 'ready') {
     return `Hi ${name}! Your order of ${itemText.value} is ready 🎉 We are ${how}. Thank you for your support!`;
   }
@@ -101,8 +90,6 @@ async function loadOrder() {
     const response = await axios.get(`/api/orders/${route.params.id}`);
     order.value = response.data;
     status.value = response.data.status;
-    paymentChoice.value = response.data.paymentStatus || 'unpaid';
-    depositInput.value = response.data.depositAmount || '';
   } catch (err) {
     error.value = err.response?.data?.message || 'Could not load order.';
   } finally {
@@ -131,56 +118,48 @@ async function changeStatus(newStatus) {
   }
 }
 
-// Paid saves straight away. Deposit waits until Save is pressed.
-function choosePayment(value) {
-  if (isDisabled(value)) return;
-
-  paymentChoice.value = value;
-  error.value = '';
-  if (value !== 'deposit') {
-    savePayment();
-  }
-}
-
-async function savePayment() {
-  savingPayment.value = true;
-  paymentSaved.value = false;
+async function updatePayment(payload) {
+  saving.value = true;
   error.value = '';
 
   try {
-    const response = await axios.patch(`/api/orders/${route.params.id}/payment`, {
-      paymentStatus: paymentChoice.value,
-      depositAmount: Number(depositInput.value) || 0,
-    });
-
+    const response = await axios.patch(`/api/orders/${route.params.id}/payment`, payload);
     order.value = response.data.order;
-    paymentChoice.value = response.data.order.paymentStatus;
-    depositInput.value = response.data.order.depositAmount || '';
-
-    paymentSaved.value = true;
-    setTimeout(() => (paymentSaved.value = false), 2000);
   } catch (err) {
-    paymentChoice.value = order.value.paymentStatus || 'unpaid'; // undo if saving failed
     error.value = err.response?.data?.message || 'Could not update payment.';
   } finally {
-    savingPayment.value = false;
+    saving.value = false;
   }
 }
 
-async function copyMessage() {
-  try {
-    await navigator.clipboard.writeText(shown.value);
-  } catch (err) {
-    const temp = document.createElement('textarea');
-    temp.value = shown.value;
-    document.body.appendChild(temp);
-    temp.select();
-    document.execCommand('copy');
-    document.body.removeChild(temp);
-  }
+async function cancelOrder(payload) {
+  saving.value = true;
+  error.value = '';
 
-  copied.value = true;
-  setTimeout(() => (copied.value = false), 2000);
+  try {
+    const response = await axios.post(`/api/orders/${route.params.id}/cancel`, payload);
+    order.value = response.data.order;
+    status.value = response.data.order.status;
+    message.value = '';
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Could not cancel order.';
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function refundOrder(payload) {
+  saving.value = true;
+  error.value = '';
+
+  try {
+    const response = await axios.post(`/api/orders/${route.params.id}/refund`, payload);
+    order.value = response.data.order;
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Could not refund order.';
+  } finally {
+    saving.value = false;
+  }
 }
 
 onMounted(loadOrder);
@@ -189,7 +168,7 @@ onMounted(loadOrder);
 <template>
   <div style="max-width: 720px">
     <RouterLink to="/orders" class="fw-semibold text-decoration-none">
-      ← Back to Orders
+      <i class="bi bi-arrow-left" aria-hidden="true"></i> Order log
     </RouterLink>
 
     <div v-if="loading" class="empty-state mt-3">Loading order...</div>
@@ -206,87 +185,36 @@ onMounted(loadOrder);
       <p v-if="error" class="text-danger">{{ error }}</p>
 
       <section class="sk-card mb-3">
-        <h2 class="h6 mb-3">Status <small v-if="saving" class="text-muted">saving...</small></h2>
-        <StageTracker :model-value="status" @update:model-value="changeStatus" />
+        <h2 class="h6 mb-3">Order progress <small v-if="saving" class="text-muted">saving...</small></h2>
+        <StageTracker
+          :model-value="status"
+          :disabled="isCancelled"
+          @update:model-value="changeStatus"
+        />
+        <p v-if="isCancelled" class="text-danger small mt-3 mb-0">This order was cancelled.</p>
       </section>
 
       <section class="sk-card mb-3">
-        <h2 class="h6 mb-3">
-          Payment
-          <small v-if="savingPayment" class="text-muted">saving...</small>
-          <small v-else-if="paymentSaved" class="text-muted">✓ saved</small>
-        </h2>
-
-        <div class="d-flex flex-wrap gap-2">
-          <button
-            v-for="opt in paymentOptions"
-            :key="opt.value"
-            type="button"
-            class="btn btn-sm"
-            :class="
-              isDisabled(opt.value)
-                ? 'is-locked'
-                : paymentChoice === opt.value
-                  ? 'btn-primary'
-                  : 'btn-outline-primary'
-            "
-            :disabled="isDisabled(opt.value)"
-            :aria-pressed="paymentChoice === opt.value"
-            @click="choosePayment(opt.value)"
-          >
-            <span v-if="paymentChoice === opt.value">✓ </span>{{ opt.label }}
-          </button>
-        </div>
-
-        <p v-if="order.depositAmount > 0" class="text-muted-sk small mt-3 mb-0">
-          Deposit on record: ${{ Number(order.depositAmount).toFixed(2) }}
-          <template v-if="order.paymentStatus === 'deposit'">
-            · Balance left to pay: ${{ balance.toFixed(2) }}
-          </template>
-        </p>
-
-        <div v-if="showDepositBox" class="mt-3">
-          <label class="form-label" for="depositAmount">Deposit amount</label>
-          <div class="d-flex gap-2" style="max-width: 280px">
-            <div class="input-group">
-              <span class="input-group-text">$</span>
-              <input
-                id="depositAmount"
-                v-model="depositInput"
-                type="number"
-                min="0"
-                step="0.01"
-                class="form-control"
-              />
-            </div>
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="savingPayment"
-              @click="savePayment"
-            >
-              Save
-            </button>
-          </div>
-        </div>
+        <h2 class="h6 mb-3">Payment <small v-if="saving" class="text-muted">saving...</small></h2>
+        <PaymentTracker
+          :payment-status="order.paymentStatus"
+          :deposit-amount="order.depositAmount || 0"
+          :price="order.price"
+          :outcome="paymentOutcome"
+          :disabled="paymentLocked"
+          :saving="saving"
+          @update="updatePayment"
+        />
       </section>
 
-      <ShareMessage v-model:message="shown" />
+      <DisputeCard
+        :order="order"
+        :saving="saving"
+        @cancel="cancelOrder"
+        @refund="refundOrder"
+      />
 
-      <button type="button" class="btn btn-primary mt-3" @click="copyMessage">
-        {{ copied ? '✓ Copied!' : 'Copy message' }}
-      </button>
+      <ShareMessage v-model:message="shown" />
     </template>
   </div>
 </template>
-
-<style scoped>
-.btn.is-locked,
-.btn.is-locked:disabled {
-  background: #ecebe2;
-  border: 1px solid var(--sk-border);
-  color: var(--sk-muted);
-  opacity: 1;
-  cursor: not-allowed;
-}
-</style>
