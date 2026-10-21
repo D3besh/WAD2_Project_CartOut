@@ -4,17 +4,34 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import mongoose from 'mongoose';
 import { deductMaterials, restoreMaterials, checkOrder } from '../services/inventory.js';
+import { parseOrder } from '../services/extraction.js';
+
 
 const router = Router();
 
+
 // Every handler must only touch orders where seller === req.session.userId.
 
-// GET /api/orders?status=ready&date=today
+
+// GET /api/orders?status=ready&date=today&outcome=ongoing
 router.get('/', async (req, res, next) => {
   try {
     const filter = { seller: req.session.userId };
 
+
     if (req.query.status) filter.status = req.query.status;
+
+
+    // Dropdown on the Order Log: ongoing | cancelled | refunded
+    const { outcome } = req.query;
+    if (outcome === 'cancelled') {
+      filter.status = 'cancelled';            // overrides the stage tracker
+    } else if (outcome === 'refunded') {
+      filter.refundAmount = { $gt: 0 };       // any refund recorded, in any stage
+    } else if (outcome === 'ongoing' && !filter.status) {
+      filter.status = { $ne: 'cancelled' };   // hide cancelled orders
+    }
+
 
     if (req.query.date === 'today') {
       const start = new Date();
@@ -24,9 +41,11 @@ router.get('/', async (req, res, next) => {
       filter.dueAt = { $gte: start, $lt: end };
     }
 
+
     const orders = await Order.find(filter)
       .populate('items.product')
       .sort({ dueAt: 1 });
+
 
     res.json(orders);
   } catch (err) {
@@ -34,7 +53,6 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-import { parseOrder } from '../services/extraction.js';
 
 router.post('/parse', async (req, res, next) => {
   try {
@@ -48,15 +66,18 @@ router.post('/parse', async (req, res, next) => {
   }
 });
 
+
 // POST /api/orders/extract
 // Body: { message }. Returns suggested fields plus a list of missing ones.
 // Uses services/extraction.js.
 router.post('/extract', notImplemented);
 
+
 // POST /api/orders/check
 // Body: a draft order. Returns whether it can be fulfilled with current stock.
 // Uses services/feasibility.js.
 router.post('/check', notImplemented);
+
 
 // Checks the items of a new order and returns either { items } or { error }.
 // Rules:
@@ -72,6 +93,7 @@ async function checkItems(items, sellerId) {
   if (!Array.isArray(items) || items.length === 0) {
     return { error: 'Add at least one item' };
   }
+
 
   const result = [];
   for (const item of items) {
@@ -101,17 +123,28 @@ async function checkItems(items, sellerId) {
       line.unitPrice = product.price;
     }
 
+
     result.push(line);
   }
   return { items: result };
 }
 
+
+// Money the customer has actually paid so far
+function amountPaid(order) {
+  if (order.paymentStatus === 'paid') return order.price;
+  if (order.paymentStatus === 'deposit') return order.depositAmount;
+  return 0;
+}
+
+
 // POST /api/orders
 // Creates an order for the logged-in seller.
 //
-// Materials decision (DOCUMENT FOR TEAM): materials are NOT deducted when an
-// order is created. materialsDeducted stays false. Deduction is still to be
-// decided (e.g. when status moves to 'ready') and built with services/inventory.js.
+// Materials decision (DOCUMENT FOR TEAM): materials ARE deducted when an
+// order is created (deductMaterials below). If the seller cancels while the
+// order is still in progress and says the materials were NOT used, they are
+// added back (see POST /:id/cancel).
 router.post('/', async (req, res, next) => {
   try {
     // Only copy the fields a seller is allowed to set.
@@ -130,6 +163,7 @@ router.post('/', async (req, res, next) => {
       rawMessage,
     } = req.body;
 
+
     // Rules the schema can't express on its own
     if (fulfilmentMethod === 'delivery' && !deliveryAddress?.trim()) {
       return res.status(400).json({ error: 'Delivery address is required for delivery orders' });
@@ -141,12 +175,14 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Deposit cannot be more than the price' });
     }
 
+
     // Check every item against the seller's own products, and copy the
     // variant's name and price onto the order (see Order.js).
     const checked = await checkItems(items, req.session.userId);
     if (checked.error) {
       return res.status(400).json({ error: checked.error });
     }
+
 
     const order = await Order.create({
       seller: req.session.userId,
@@ -162,7 +198,7 @@ router.post('/', async (req, res, next) => {
       dueAt,
       rawMessage,
     });
-    await deductMaterials(order)
+    await deductMaterials(order);
     res.status(201).json(order);
   } catch (err) {
     // Bad input (missing required field, wrong enum, invalid id) → 400 with a readable message
@@ -172,6 +208,7 @@ router.post('/', async (req, res, next) => {
     next(err);
   }
 });
+
 
 // GET /api/orders/:id
 router.get('/:id', async (req, res, next) => {
@@ -188,11 +225,13 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+
 // PUT /api/orders/:id
 router.put('/:id', notImplemented);
 
+
 // PATCH /api/orders/:id/status
-// Body: { status }. Also returns a suggested customer message.
+// Body: { status }. Cancelling goes through POST /:id/cancel instead.
 router.patch('/:id/status', async (req, res, next) => {
   try {
     const { status } = req.body;
@@ -200,19 +239,158 @@ router.patch('/:id/status', async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid status.' });
     }
     const order = await Order.findOneAndUpdate(
-      { _id: req.params.id, seller: req.session.userId },
+      { _id: req.params.id, seller: req.session.userId, status: { $ne: 'cancelled' } },
       { status },
       { new: true }
     ).populate('items.product');
-    if (!order) return res.status(404).json({ message: 'Order not found.' });
+    if (!order) return res.status(404).json({ message: 'Order not found or already cancelled.' });
     res.json({ order });
   } catch (err) {
     next(err);
   }
 });
 
+
+// POST /api/orders/:id/cancel
+// Body: { reason, materialsUsed, forfeitDeposit }
+//   - Ready orders: materials always count as used, deposit is always kept.
+//   - In-progress orders: the seller decides. If materials were NOT used,
+//     they are added back to inventory automatically.
+router.post('/:id/cancel', async (req, res, next) => {
+  try {
+    const { reason, materialsUsed, forfeitDeposit } = req.body;
+    if (!reason?.trim()) {
+      return res.status(400).json({ message: 'Give a reason for the cancellation.' });
+    }
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order id.' });
+    }
+
+
+    const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId });
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ message: 'Order is already cancelled.' });
+    }
+    if (order.status === 'completed') {
+      return res.status(400).json({ message: 'Completed orders cannot be cancelled. Use a refund instead.' });
+    }
+
+
+    const used = order.status === 'ready' ? true : Boolean(materialsUsed);
+    const forfeit = order.status === 'ready' ? true : Boolean(forfeitDeposit);
+
+
+    if (!used && order.materialsDeducted) {
+      await restoreMaterials(order);
+      order.materialsDeducted = false; // never restore twice
+    }
+    order.materialsWasted = used;
+
+
+    if (forfeit && order.paymentStatus === 'deposit') {
+      order.forfeitedAmount = order.depositAmount;
+    }
+
+
+    order.status = 'cancelled';
+    order.cancelReason = reason;
+    order.cancelledAt = new Date();
+    await order.save();
+    await order.populate('items.product');
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// POST /api/orders/:id/refund
+// Body: { amount, reason }. Partial refunds allowed, capped at what is refundable.
+router.post('/:id/refund', async (req, res, next) => {
+  try {
+    const amount = Number(req.body.amount);
+    const { reason } = req.body;
+    if (!(amount > 0)) return res.status(400).json({ message: 'Enter a refund amount.' });
+    if (!reason?.trim()) return res.status(400).json({ message: 'Give a reason for the refund.' });
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order id.' });
+    }
+
+
+    const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId });
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+
+    const refundable = amountPaid(order) - order.refundAmount - order.forfeitedAmount;
+    if (amount > refundable) {
+      return res.status(400).json({ message: `You can refund at most $${refundable.toFixed(2)}.` });
+    }
+
+
+    order.refundAmount += amount;
+    order.refundReason = reason;
+    order.refundedAt = new Date();
+    await order.save();
+    await order.populate('items.product');
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// PATCH /api/orders/:id/payment
+// Body: { paymentStatus: 'unpaid' | 'deposit' | 'paid', depositAmount? }
+router.patch('/:id/payment', async (req, res, next) => {
+  try {
+    const { paymentStatus } = req.body;
+    if (!['unpaid', 'deposit', 'paid'].includes(paymentStatus)) {
+      return res.status(400).json({ message: 'Invalid payment status.' });
+    }
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order id.' });
+    }
+
+
+    const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId });
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ message: 'Cancelled orders cannot be changed.' });
+    }
+    if (order.refundAmount > 0 || order.forfeitedAmount > 0) {
+      return res.status(400).json({ message: 'Payment cannot be changed after a refund.' });
+    }
+
+
+    let deposit = 0;
+    if (paymentStatus === 'deposit') {
+      deposit = Number(req.body.depositAmount);
+      if (!(deposit > 0)) {
+        return res.status(400).json({ message: 'Enter the deposit amount.' });
+      }
+      if (deposit > order.price) {
+        return res.status(400).json({ message: 'Deposit cannot be more than the price.' });
+      }
+    }
+
+
+    order.paymentStatus = paymentStatus;
+    order.depositAmount = deposit;
+    await order.save();
+    await order.populate('items.product');
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 // DELETE /api/orders/:id
-// Restore materials if they were deducted (see services/inventory.js).
+// Not used for disputes: cancel keeps a record instead of deleting.
 router.delete('/:id', notImplemented);
+
 
 export default router;
