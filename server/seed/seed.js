@@ -1,4 +1,4 @@
-// run using node seed/seed.js or npm run seed
+// run using node seed/seed.js
 
 import { fileURLToPath } from 'url';
 import path from 'path';

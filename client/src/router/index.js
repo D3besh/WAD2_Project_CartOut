@@ -9,12 +9,18 @@ import OrderDetailView from '../views/OrderDetailView.vue';
 import MaterialsView from '../views/MaterialsView.vue';
 import ProductsView from '../views/ProductsView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
-import LogoutView from '../views/LogoutView.vue';
+import LoggedOutView from '../views/LoggedOutView.vue';
+import ProfileView from '../views/ProfileView.vue';
+import EditProfileView from '../views/EditProfileView.vue';
+import DeletedProfileView from '../views/DeletedProfileView.vue';
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
   { path: '/register', name: 'register', component: RegisterView, meta: { public: true } },
-  { path: '/logout', name: 'logout', component: LogoutView },
+  { path: '/logged-out', name: 'logged-out', component: LoggedOutView, meta: { public: true } },
+  { path: '/profile', name: 'profile', component: ProfileView },
+  { path: '/profile/edit', name: 'profile-edit', component: EditProfileView },
+  { path: '/account-deleted', name: 'account-deleted', component: DeletedProfileView, meta: { public: true } },
   { path: '/', name: 'home', component: HomeView },
   { path: '/orders/new', name: 'log-order', component: LogOrderView },
   { path: '/orders', name: 'order-log', component: OrderLogView },

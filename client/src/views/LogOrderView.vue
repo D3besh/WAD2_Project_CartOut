@@ -11,9 +11,11 @@ import axios from 'axios';
 const products = ref([]);
 const productsError = ref('');
 
-// One line of the order. variantId is the _id of one of the product's variants.
+// One line of the order. variantId means:
+//   null  = "Regular", the plain product with the main recipe only (the default)
+//   an id = one of the product's variants (product.variants[]._id)
 function newItem() {
-  return { product: '', variantId: '', quantity: 1 };
+  return { product: '', variantId: null, quantity: 1 };
 }
 
 const emptyForm = () => ({
@@ -62,9 +64,9 @@ function variantsFor(item) {
   return product?.variants ?? [];
 }
 
-// A different product has different variants, so clear the old choice
+// A different product has different variants, so go back to Regular
 function onProductChange(item) {
-  item.variantId = '';
+  item.variantId = null;
 }
 
 function variantPlaceholder(item) {
@@ -103,7 +105,6 @@ const missing = computed(() => {
   const list = [];
   if (!form.customerName.trim()) list.push('Customer name');
   if (form.items.some((i) => !i.product || !(i.quantity >= 1))) list.push('Products and quantities');
-  // if (form.items.some((i) => variantsFor(i).length > 0 && !i.variantId)) list.push('Variant');
   if (form.price === null || form.price === '' || form.price < 0) list.push('Price');
   if (!form.fulfilmentMethod) list.push('Collection or delivery');
   if (form.fulfilmentMethod === 'delivery' && !form.deliveryAddress.trim()) list.push('Delivery address');
@@ -125,7 +126,7 @@ async function saveOrder() {
       // Only send ids and quantities; the server looks up names and prices itself
       items: form.items.map((item) => ({
         product: item.product,
-        variantId: item.variantId || undefined,
+        variantId: item.variantId || null, // Regular (or a product with no variants) → null
         quantity: item.quantity,
       })),
       // datetime-local has no timezone; convert in the browser so the seller's local time is kept
@@ -147,12 +148,21 @@ const detectionProblems = ref([]);
 const isProcessing = ref(false);
 
 // Finds the variant whose name matches the text from the message (ignoring
-// capitals and spaces at the ends). Returns its _id, or '' if nothing matches.
+// capitals and spaces at the ends). Returns its _id, or null (Regular) if the
+// message named no variant, asked for "Regular", or named one we can't match.
 function matchVariant(item, text) {
-  if (!text) return '';
+  if (!text) return null;
   const wanted = String(text).trim().toLowerCase();
+  if (wanted === 'regular') return null;
   const match = variantsFor(item).find(v => v.name.trim().toLowerCase() === wanted);
-  return match ? match._id : '';
+  return match ? match._id : null;
+}
+
+// True when the message named a variant (other than "Regular") that we
+// couldn't match, so the item fell back to Regular and the seller should check it.
+function variantNotMatched(text, variantId) {
+  const wanted = text?.trim().toLowerCase();
+  return Boolean(wanted) && wanted !== 'regular' && variantId === null;
 }
 
 // <input type="datetime-local"> only accepts 'YYYY-MM-DDTHH:mm' in local time.
@@ -209,17 +219,17 @@ const autoFillForm = async () => {
       form.items = data.items.map(item => {
         const line = {
           product: item.product ?? '',
-          variantId: '',
+          variantId: null,
           quantity: item.quantity ?? 1
         };
 
-        // Match the AI-detected variant name to its MongoDB ID.
+        // Match the AI-detected variant name to its MongoDB ID (or Regular).
         line.variantId = matchVariant(line, item.variant);
 
         // Only flag a variant if one was specified but couldn't be matched.
-        if (item.variant && !line.variantId) {
+        if (variantNotMatched(item.variant, line.variantId)) {
           detectionProblems.value.push(
-            `Could not match variant "${item.variant}" for "${item.matchedName ?? item.requestedName ?? 'this product'}". Please select it manually.`
+            `Could not match variant "${item.variant}" for "${item.matchedName ?? item.requestedName ?? 'this product'}", so it was set to Regular. Please check it.`
           );
         }
 
@@ -228,15 +238,11 @@ const autoFillForm = async () => {
 
       filledFields.value.push('Items');
 
-      // Variant is optional.
-      const hasVariant = data.items.some(
-        item => item.variant?.trim()
-      );
+      // Variant is optional: anything not stated or not matched becomes Regular.
+      const hasVariant = data.items.some(item => item.variant?.trim());
 
       const unmatchedVariant = data.items.some(
-        (item, index) =>
-          item.variant?.trim() &&
-          !form.items[index]?.variantId
+        (item, index) => variantNotMatched(item.variant, form.items[index]?.variantId)
       );
 
       if (hasVariant && !unmatchedVariant) {
@@ -398,9 +404,13 @@ const autoFillForm = async () => {
           <div class="col-sm-3">
             <label :for="`variant-${index}`" class="form-label">Variant</label>
             <select :id="`variant-${index}`" v-model="item.variantId" class="form-select"
-              :disabled="variantsFor(item).length === 0"
-              :class="{ 'is-invalid': variantsFor(item).length > 0 && !item.variantId && isMissing('Variant') }">
-              <option value="" disabled>{{ variantPlaceholder(item) }}</option>
+              :disabled="variantsFor(item).length === 0">
+              <!-- Placeholder only when there's nothing to choose; otherwise Regular is the default -->
+              <option v-if="variantsFor(item).length === 0" :value="null" disabled>{{ variantPlaceholder(item) }}</option>
+              <!-- Regular = the plain product (main recipe only). Its value is null, not the text "Regular". -->
+              <option v-if="variantsFor(item).length > 0" :value="null">
+                Regular (${{ (findProduct(item.product).price ?? 0).toFixed(2) }})
+              </option>
               <option v-for="v in variantsFor(item)" :key="v._id" :value="v._id">
                 {{ v.name }} (${{ (v.price ?? findProduct(item.product).price).toFixed(2) }})
               </option>

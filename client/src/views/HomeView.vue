@@ -8,7 +8,7 @@
 import { ref, computed, onMounted } from "vue";
 import axios from "axios";
 import { fullRecipe, calculateCanMake } from "../utils/capacity.js";
-import OrderCard from '../components/OrderCard.vue';
+import OrderCard from "../components/OrderCard.vue";
 
 const shopName = ref("");
 const loading = ref(true);
@@ -169,6 +169,42 @@ async function loadOrders() {
   }
 }
 
+// Appearance settings — light and dark mode only
+const showAppearance = ref(false);
+
+const selectedMode = ref(
+  localStorage.getItem("cartoutMode") === "dark" ? "dark" : "light",
+);
+
+function applyAppearance() {
+  const website = document.documentElement;
+
+  // Remove old palette classes and display-mode classes
+  website.classList.remove(
+    "light-mode",
+    "dark-mode",
+    "theme-default",
+    "theme-steel",
+    "theme-teal",
+    "theme-flamingo",
+    "theme-sunrise",
+  );
+
+  // Apply selected mode
+  website.classList.add(selectedMode.value + "-mode");
+
+  // Save only the display mode
+  localStorage.setItem("cartoutMode", selectedMode.value);
+  localStorage.removeItem("cartoutPalette");
+}
+
+function resetAppearance() {
+  selectedMode.value = "light";
+  applyAppearance();
+}
+
+onMounted(applyAppearance);
+
 onMounted(loadOrders);
 
 onMounted(loadInventory);
@@ -189,11 +225,7 @@ onMounted(loadShop);
 
     <div v-if="errorMessage" class="alert alert-danger" role="alert">
       {{ errorMessage }}
-      <button
-        type="button"
-        class="btn btn-danger btn-sm"
-        @click="loadShop"
-      >
+      <button type="button" class="btn btn-danger btn-sm" @click="loadShop">
         Retry
       </button>
     </div>
@@ -230,14 +262,11 @@ onMounted(loadShop);
             :key="order._id"
             class="home-order-wrapper"
           >
-              <OrderCard :order="order" />
-            </div>
+            <OrderCard :order="order" />
           </div>
+        </div>
 
-
-        <p v-else class="text-secondary">
-          No outstanding orders due today.
-        </p>
+        <p v-else class="text-secondary">No outstanding orders due today.</p>
 
         <div class="d-flex gap-2 mt-3">
           <RouterLink
@@ -258,7 +287,6 @@ onMounted(loadShop);
       </div>
     </div>
 
-
     <!-- Inventory error -->
     <div v-if="inventoryError" class="alert alert-danger" role="alert">
       {{ inventoryError }}
@@ -273,7 +301,7 @@ onMounted(loadShop);
 
     <div class="row">
       <!-- Running low -->
-      <div class="col-md-6 mb-3">
+      <div class="col-md-6">
         <div class="card h-100">
           <div class="card-body">
             <h5 class="card-title">Running low</h5>
@@ -324,7 +352,7 @@ onMounted(loadShop);
       </div>
 
       <!-- Fewest you can make -->
-      <div class="col-md-6 mb-3">
+      <div class="col-md-6">
         <div class="card h-100">
           <div class="card-body">
             <h5 class="card-title">Fewest you can make</h5>
@@ -364,53 +392,66 @@ onMounted(loadShop);
               </ul>
             </template>
 
-            <RouterLink
-              to="/products"
-              class="text-success d-inline-block mt-3"
-            >
+            <RouterLink to="/products" class="text-success d-inline-block mt-3">
               See all
             </RouterLink>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Appearance settings -->
+    <div class="home-appearance mt-3 mb-4">
+      <button
+        type="button"
+        class="home-appearance-toggle"
+        :aria-expanded="showAppearance"
+        aria-controls="appearance-options"
+        @click="showAppearance = !showAppearance"
+      >
+        <span>Appearance settings</span>
+        <span aria-hidden="true">
+          {{ showAppearance ? "−" : "+" }}
+        </span>
+      </button>
+
+      <div
+        v-show="showAppearance"
+        id="appearance-options"
+        class="home-appearance-content"
+      >
+        <p class="home-appearance-description">
+          Choose your preferred display mode.
+        </p>
+
+        <div>
+          <label for="appearance-mode" class="form-label"> Display mode </label>
+
+          <select
+            id="appearance-mode"
+            v-model="selectedMode"
+            class="form-select"
+            @change="applyAppearance"
+          >
+            <option value="light">Light mode</option>
+            <option value="dark">Dark mode</option>
+          </select>
+        </div>
+
+        <p class="home-appearance-description small mt-3">
+          Your preference is saved in this browser.
+        </p>
+
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="resetAppearance"
+        >
+          Reset to default
+        </button>
+      </div>
+    </div>
   </section>
 </template>
 
-<style scoped>
-.home-orders {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.home-order-wrapper {
-  width: fit-content;
-  max-width: 100%;
-}
-
-.home-order-wrapper > :deep(*) {
-  display: block;
-  width: auto;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-.home-order-button {
-  width: auto;
-  margin: 0;
-  white-space: nowrap;
-}
-
-.home-see-all {
-  background-color: #6c757d;
-  border-color: #6c757d;
-  color: white;
-}
-
-.home-see-all:hover {
-  background-color: #5c636a;
-  border-color: #565e64;
-}
-</style>
+<style src="../assets/home.css"></style>

@@ -2,7 +2,8 @@
 //
 //   GET    /       list this seller's products (archived ones are hidden)
 //   POST   /       add a product
-//   PUT    /:id    edit a product (can't remove a variant that an in-progress order uses)
+//   PUT    /:id    edit a product (can't remove a variant that an in-progress order uses;
+//                  renaming is fine, because orders find variants by ID)
 //   DELETE /:id    delete, archive or refuse, depending on the orders that use it:
 //
 //     Product is in...                 → what happens
@@ -56,27 +57,40 @@ async function checkMaterialsAreMine(body, sellerId) {
   if (count !== new Set(ids.map(String)).size) throw fail(400, 'A material in the recipe was not found');
 }
 
-// Variants being removed (or renamed) that an IN-PROGRESS order still uses.
+// Variants being REMOVED that an IN-PROGRESS order still uses.
 // Why: if that order is cancelled, we need the variant's recipe to put its materials back.
 // (Ready / completed orders can't be cancelled, and they store the variant name as text,
 //  so they still display fine.)
 //
+// A variant counts as kept if its _id is still there (so renaming is allowed) OR
+// its name is still there (products not re-saved since variants got IDs get a
+// new temporary _id each time they're loaded, so the _id alone isn't reliable).
+//
 // Example: old variants = Oat milk, Fresh milk. New variants = Fresh milk.
 //          "Oat milk" was removed → if an in-progress order uses it, return ['Oat milk']
 async function removedVariantsInUse(product, newVariants, sellerId) {
-  let newNames = newVariants.map((v) => (v.name || '').trim());
-  let removed = product.variants.map((v) => v.name).filter((name) => !newNames.includes(name));
+  let keptIds = newVariants.filter((v) => v._id).map((v) => String(v._id));
+  let keptNames = newVariants.map((v) => (v.name || '').trim());
+  let removed = product.variants.filter(
+    (v) => !keptIds.includes(String(v._id)) && !keptNames.includes(v.name)
+  );
 
   let inUse = [];
-  for (let name of removed) {
-    // $elemMatch = the SAME order item must have this product AND this variant
+  for (let v of removed) {
+    // $elemMatch = the SAME order item must have this product AND this variant.
+    // Match by variantId; orders from before variants had IDs only have the name.
     let used = await Order.exists({
       seller: sellerId,
       status: 'in-progress',
-      items: { $elemMatch: { product: product._id, variant: name } },
+      items: {
+        $elemMatch: {
+          product: product._id,
+          $or: [{ variantId: v._id }, { variantId: null, variant: v.name }],
+        },
+      },
     });
     if (used) {
-      inUse.push(name);
+      inUse.push(v.name);
     }
   }
   return inUse;
@@ -106,11 +120,11 @@ router.put('/:id', handle(async (req, res) => {
   const product = await findOwned(req.params.id, req.user.id);
   await checkMaterialsAreMine(req.body, req.user.id);
 
-  // Don't allow removing/renaming a variant that an in-progress order uses
+  // Don't allow removing a variant that an in-progress order uses (renaming is fine)
   if (req.body.variants) {
     const inUse = await removedVariantsInUse(product, req.body.variants, req.user.id);
     if (inUse.length > 0) {
-      throw fail(409, `"${inUse.join('", "')}" is in an in-progress order, so it cannot be removed or renamed yet`);
+      throw fail(409, `"${inUse.join('", "')}" is in an in-progress order, so it cannot be removed yet`);
     }
   }
 

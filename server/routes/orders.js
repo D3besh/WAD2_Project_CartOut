@@ -82,8 +82,11 @@ router.post('/check', notImplemented);
 // Checks the items of a new order and returns either { items } or { error }.
 // Rules:
 //   - the product must exist and belong to this seller
-//   - if the product has variants, one of THEM must be chosen (by its _id)
-//   - if it has no variants, no variant is stored
+//   - variantId null (or missing) = "Regular": the plain product, main recipe only
+//   - a variantId must be one of THIS product's variants
+//   - a product with no variants never stores a variant
+// The page defaults every item to Regular (null), so a missing variantId is
+// saved as Regular rather than rejected.
 // The browser only sends { product, variantId, quantity }. The name and price
 // are looked up here, so they can't be faked from the browser.
 async function checkItems(items, sellerId) {
@@ -102,19 +105,21 @@ async function checkItems(items, sellerId) {
       return { error: 'One of the products no longer exists' };
     }
 
+    const line = { product: product._id, quantity: item.quantity, variantId: null };
 
-    const line = { product: product._id, quantity: item.quantity };
-
-
-    if (product.variants.length > 0) {
-      const variant = item.variantId ? product.variants.id(item.variantId) : null;
+    if (item.variantId) {
+      // A specific variant was chosen: it must belong to this product
+      const variant = mongoose.isValidObjectId(item.variantId)
+        ? product.variants.id(item.variantId)
+        : null;
       if (!variant) {
-        return { error: `Choose a variant for ${product.name}` };
+        return { error: `That variant of ${product.name} no longer exists. Choose it again.` };
       }
       line.variantId = variant._id;
       line.variant = variant.name;
       line.unitPrice = variant.price ?? product.price; // empty variant price = product's price
     } else {
+      // Regular, or a product with no variants: main recipe and product price
       line.unitPrice = product.price;
     }
 
