@@ -1,8 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import ProfileButton from './ProfileButton.vue'
-// Main navigation: a bottom tab bar on mobile, a sidebar on desktop.
-// Same links in both, so users learn one set of names.
+// Main navigation: a bar across the top of every page.
+// On small screens the links fold into a hamburger menu.
 const links = [
   { to: '/', label: 'Home' },
   { to: '/orders', label: 'Order log' },
@@ -13,7 +13,7 @@ const links = [
 // Hamburger
 const hamBurger = ref(false)
 
-//close hamburger 
+//close hamburger
 function closeHamburger() {
   hamBurger.value = false
 }
@@ -81,10 +81,10 @@ function closeHamburger() {
 </template>
 
 <style scoped>
+/* Navy bar across the top */
 .app-nav {
   width: 100%;
-  background-color: var(--sk-surface);
-  border-bottom: 1px solid var(--sk-border);
+  background-color: var(--sk-brand-deep);
   position: sticky;
   top: 0;
   z-index: 1020;
@@ -92,31 +92,57 @@ function closeHamburger() {
 }
 
 .navbar-brand {
-  font-weight: 700;
-  color: var(--sk-text);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+.navbar-brand:hover {
+  color: #ffffff;
 }
 
+/* Links: soft lavender, white when hovered or on that page */
 .app-nav__link {
-  border-radius: 8px;
-  padding: 0.5rem 0.85rem;
-  color: var(--sk-brand);
+  border-radius: var(--sk-radius-btn);
+  padding: 0.5rem 0.95rem;
+  color: #b9b8d6;
+  font-weight: 600;
   text-decoration: none;
 }
 
 .app-nav__link:hover {
-  background-color: var(--sk-brand-soft);
-  color: var(--sk-brand-dark);
+  background-color: rgb(255 255 255 / 0.08);
+  color: #ffffff;
 }
 
 .app-nav__link.router-link-exact-active {
-  background-color: var(--sk-brand-soft);
-  color: var(--sk-brand-dark);
-  font-weight: 700;
+  background-color: var(--sk-brand-dark);
+  color: #ffffff;
+}
+
+.app-nav__link:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* Hamburger button: white lines on the dark bar */
+.navbar-toggler {
+  border-color: rgb(255 255 255 / 0.3);
+}
+.navbar-toggler:focus {
+  box-shadow: 0 0 0 0.2rem rgb(255 255 255 / 0.25);
+}
+.navbar-toggler-icon {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.85%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
 }
 
 @media (max-width: 991.98px) {
   .navbar-collapse {
     flex-basis: 100%;
+  }
+  /* A little space between the bar and the opened menu */
+  .navbar-nav {
+    padding-top: 0.5rem;
+    gap: 0.15rem;
   }
 }
 </style>
