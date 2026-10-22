@@ -545,7 +545,7 @@ onMounted(loadShop);
     <div class="d-flex flex-row flex-nowrap align-items-center gap-2">
       <button
         type="button"
-        class="btn btn-secondary text-nowrap w-auto flex-shrink-0"
+        class="btn btn-light text-nowrap w-auto flex-shrink-0"
         :aria-expanded="showDashboardOptions"
         aria-controls="dashboard-options"
         @click="showDashboardOptions = !showDashboardOptions"
@@ -555,7 +555,7 @@ onMounted(loadShop);
 
       <RouterLink
         to="/orders/new"
-        class="btn btn-success text-nowrap"
+        class="btn btn-primary text-nowrap"
       >
         Log order
       </RouterLink>
@@ -569,8 +569,21 @@ onMounted(loadShop);
     class="card mb-3"
   >
     <div class="card-body">
+      <!-- Title on the left, Reset on the top right -->
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h3 class="h6 mb-0">Choose visible dashboard cards</h3>
+        <button
+          type="button"
+          class="btn btn-light btn-sm text-nowrap"
+          @click="resetDashboardCards"
+        >
+          Reset cards to default
+        </button>
+      </div>
+
       <fieldset>
-        <legend class="h6">Choose visible dashboard cards</legend>
+        <!-- Screen readers still hear the group name -->
+        <legend class="visually-hidden">Choose visible dashboard cards</legend>
 
         <div class="row g-2">
           <div
@@ -598,14 +611,6 @@ onMounted(loadShop);
           </div>
         </div>
       </fieldset>
-
-      <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm mt-3"
-        @click="resetDashboardCards"
-      >
-        Reset cards to default
-      </button>
 
       <p class="small text-secondary mt-2 mb-0" role="status">
         {{ dashboardPreferenceMessage }}
@@ -862,7 +867,7 @@ onMounted(loadShop);
           Today's orders
           <span
             v-if="!ordersLoading && !ordersError"
-            class="badge bg-secondary"
+            class="status status--muted ms-1"
           >
             {{ todaysOrders.length }}
           </span>
@@ -899,7 +904,7 @@ onMounted(loadShop);
           <RouterLink
             v-if="!ordersLoading && !ordersError && todaysOrders.length"
             to="/orders"
-            class="btn btn-secondary home-order-button home-see-all"
+            class="btn btn-light home-order-button home-see-all"
           >
             See all orders
           </RouterLink>
@@ -943,7 +948,7 @@ onMounted(loadShop);
                     class="d-flex justify-content-between align-items-center"
                   >
                     <span>{{ material.name }}</span>
-                    <span class="badge bg-danger">Running low</span>
+                    <span class="status status--danger">Running low</span>
                   </div>
 
                   <small
@@ -962,7 +967,7 @@ onMounted(loadShop);
 
             <RouterLink
               to="/materials"
-              class="text-success d-inline-block mt-3"
+              class="home-link d-inline-block mt-3"
               @click="showLowMaterials"
             >
               See all
@@ -1004,7 +1009,7 @@ onMounted(loadShop);
                   <div
                     v-for="warning in item.warnings"
                     :key="warning"
-                    class="small text-warning"
+                    class="small home-warning"
                   >
                     {{ warning }}
                   </div>
@@ -1012,7 +1017,7 @@ onMounted(loadShop);
               </ul>
             </template>
 
-            <RouterLink to="/products" class="text-success d-inline-block mt-3">
+            <RouterLink to="/products" class="home-link d-inline-block mt-3">
               See all
             </RouterLink>
           </div>

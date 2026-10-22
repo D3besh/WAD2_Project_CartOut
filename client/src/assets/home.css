@@ -1,7 +1,8 @@
-/* CartOut — home layout and light/dark display modes.
+/* CartOut — Home page (dashboard) styles.
+   Colours come from the tokens in main.css (--sk-brand, --sk-text, ...),
+   so changing the colour scheme there updates this page too. */
 
-
-/* 1. Home-page stuff */
+/* ---------- Home page layout ---------- */
 .home-order-wrapper {
   width: fit-content;
   max-width: 100%;
@@ -20,111 +21,41 @@
   white-space: nowrap;
 }
 
+/* "See all" button: a quieter, secondary style */
 .home-see-all {
-  background-color: #6c757d;
-  border-color: #6c757d;
-  color: white;
+  background-color: var(--sk-surface);
+  border-color: var(--sk-border);
+  color: var(--sk-brand-dark);
 }
 
 .home-see-all:hover {
-  background-color: #5c636a;
-  border-color: #565e64;
+  background-color: var(--sk-brand-soft);
+  border-color: var(--sk-border);
+  color: var(--sk-brand-dark);
 }
 
-.app-nav__link {
-  border-radius: 8px;
-}
-
-/* colours add here */
-.light-mode {
-  color-scheme: light;
-  --sk-bg: #f8f7f2;
-  --sk-surface: #ffffff;
-  --sk-border: #e5e4da;
-  --sk-text: #2b2420;
-  --sk-muted: #7a6e66;
-  --bs-body-bg: #f8f7f2;
-  --bs-body-color: #2b2420;
-  --bs-secondary-color: #7a6e66;
-  --bs-border-color: #e5e4da;
-}
-
-.light-mode body,
-.light-mode #app,
-.light-mode .app-main {
-  background-color: #f8f7f2;
-  color: #2b2420;
-}
-
-.light-mode .card,
-.light-mode .sk-card {
-  background-color: #f8f7f2;
-  color: #2b2420;
-  border-color: #e5e4da;
-}
-
-.light-mode .form-control,
-.light-mode .form-select {
-  background-color: white;
-  color: #2b2420;
-  border-color: #767676;
-}
-
-.light-mode .form-control::placeholder {
-  color: #6c757d;
-}
-
-/* Original CartOut teal buttons, independent of colour palettes. */
-.btn-primary,
-.btn-success {
-  background-color: #0f5f60;
-  border-color: #0f5f60;
-  color: white;
-}
-
-.btn-primary:hover,
-.btn-success:hover {
-  background-color: #0b4b4c;
-  border-color: #0b4b4c;
-  color: white;
-}
-
-.light-mode .app-nav__link {
-  color: #557a2b;
-}
-
-.light-mode .app-nav__link:hover,
-.light-mode .app-nav__link.router-link-exact-active {
-  background-color: #eef3e2;
-  color: #3f5c1f;
-}
-
-.light-mode .card {
-  border-color: #c5c3bb;
-}
-
-/* Dashboard profit graph */
+/* ---------- Dashboard profit graph ---------- */
 .profit-line-chart {
   display: block;
   width: 100%;
   min-width: 520px;
   height: auto;
-  color: inherit;
+  color: var(--sk-brand);   /* line and dots */
 }
 
 .profit-chart-grid {
-  stroke: currentColor;
-  opacity: 0.15;
+  stroke: var(--sk-text);
+  opacity: 0.12;
 }
 
 .profit-chart-zero {
-  stroke: currentColor;
+  stroke: var(--sk-text);
   opacity: 0.4;
   stroke-dasharray: 4 4;
 }
 
 .profit-chart-label {
-  fill: currentColor;
+  fill: var(--sk-muted);
   font-size: 11px;
 }
 
@@ -139,9 +70,3 @@
 .profit-chart-point {
   fill: currentColor;
 }
-
-
-
-
-
-

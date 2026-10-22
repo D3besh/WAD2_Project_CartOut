@@ -11,10 +11,9 @@
    5. Pop-ups      – rounded modal, recipe rows, variant boxes
    ========================================================================= */
 
-/* ---------- 0. Guard ----------
-   Something global in the project restyles every .btn (teal, full width).
-   On these two pages, put Bootstrap's own button colours back.
-   .inv-page .btn is more specific than .btn, so this wins wherever the other rule is. */
+/* ---------- 0. Buttons ----------
+   Makes sure buttons on these two pages always use the theme colours
+   and natural width, even if another stylesheet changes .btn. */
 .inv-page .btn {
   width: auto;
   background-color: var(--bs-btn-bg);
@@ -62,8 +61,19 @@
 .inv-banner--warn { background: var(--sk-warn-soft); color: var(--sk-warn); border-color: rgb(168 101 15 / 0.18); }
 .inv-banner--warn strong { color: var(--sk-text); }
 
-.inv-banner--info { background: var(--sk-brand-soft); color: var(--sk-brand-dark); border-color: rgb(85 122 43 / 0.18); }
+.inv-banner--info { background: var(--sk-brand-soft); color: var(--sk-brand-dark); border-color: rgb(80 80 129 / 0.2); }
 .inv-banner--info .inv-hint { color: var(--sk-muted); }
+
+/* "Forecast accuracy: ..." line under the forecast banner */
+.inv-accuracy {
+  font-size: 0.85rem;
+  color: var(--sk-muted);
+  background: var(--sk-surface);
+  border: 1px dashed var(--sk-border);
+  border-radius: var(--sk-radius-sm);
+  padding: 0.6rem 0.9rem;
+}
+.inv-accuracy strong { color: var(--sk-text); }
 
 /* "Show 4 more" link at the bottom of a banner */
 .inv-page .inv-more {
@@ -269,7 +279,7 @@
 }
 .inv-line .unit { color: var(--sk-muted); font-size: 0.85rem; }
 
-/* Small round ✕ button for removing a row */
+/* Small square ✕ button for removing a row */
 .inv-page .inv-remove {
   width: 2.1rem;
   height: 2.1rem;
@@ -277,7 +287,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--sk-radius-btn);
   color: var(--sk-muted);
 }
 .inv-page .inv-remove:hover { color: var(--sk-danger); }
