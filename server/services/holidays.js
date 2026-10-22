@@ -11,19 +11,38 @@
 // works — it just won't skip holidays.
 //
 // (If a teammate already fetches holidays elsewhere, reuse their code instead.)
-export async function getHolidayDates() {
-  let url = process.env.HOLIDAYS_URL;
-  if (!url) {
-    return [];
-  }
 
+// export async function getHolidayDates() {
+//   let url = process.env.HOLIDAYS_URL;
+//   if (!url) {
+//     return [];
+//   }
+
+//   try {
+//     let response = await fetch(url);
+//     let data = await response.json();
+//     // Each record looks like { date: "2026-10-20", day: "Tuesday", holiday: "Deepavali" }
+//     return data.result.records.map((record) => record.date);
+//   } catch (error) {
+//     console.error('Could not load public holidays:', error.message);
+//     return [];
+//   }
+// }
+
+import axios from "axios";
+
+const DATASET_ID = "d_149b61ad0a22f61c09dc80f2df5bbec8";
+const HOLIDAYS_URL = "https://data.gov.sg/api/action/datastore_search?resource_id=" + DATASET_ID;
+
+export async function getHolidayDates() {
   try {
-    let response = await fetch(url);
-    let data = await response.json();
-    // Each record looks like { date: "2026-10-20", day: "Tuesday", holiday: "Deepavali" }
-    return data.result.records.map((record) => record.date);
-  } catch (error) {
-    console.error('Could not load public holidays:', error.message);
-    return [];
+    const response = await axios.get(HOLIDAYS_URL);
+
+    console.log("Successful retrieval of public holiday dates (2026): ")
+    console.log(response.data.result.records.map((record) => record.date)) // array of dates
+    return response.data.result.records.map((record) => record.date)
+  } catch (err) {
+    console.log(err.message)
+    return []
   }
 }

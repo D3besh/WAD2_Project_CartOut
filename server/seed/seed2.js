@@ -126,6 +126,9 @@ function makeMessage(platform, desc, delivery, address, dueAt) {
   return templates[platform];
 }
 
+// Finds a variant's ObjectId by its name, so hand-written orders can reference it by ID
+const variantIdOf = (productDoc, name) => productDoc.variants.find((v) => v.name === name)._id;
+
 // ---------- Seller definitions ----------
 // materials: key is local to the seller and used by recipes / extras
 // recentOrders: hand-written orders around "now" (p = map of product key -> saved product doc)
@@ -153,6 +156,7 @@ const SELLERS = [
         name: 'Lavender candle',
         label: ['lavender candle', 'lavender candles'], // used in order messages
         price: 18,
+        cost: 13,
         makingTimeMins: 45,
         recipe: [
           { material: 'wax', amountPerUnit: 200 },
@@ -161,8 +165,8 @@ const SELLERS = [
           { material: 'jars', amountPerUnit: 1 },
         ],
         variants: [
-          { name: 'Small (100g)', price: 12, extras: [] },
-          { name: 'With dried lavender topping', price: 21, extras: [{ material: 'lavender', amountPerUnit: 5 }] },
+          { name: 'Small (100g)', price: 12, cost: 7, extras: [] },
+          { name: 'With dried lavender topping', price: 21, cost: 16, extras: [{ material: 'lavender', amountPerUnit: 5 }] },
         ],
         // RISING: gift favourite that keeps growing, peaks Fri/Sat, with a gifting bump
         demand: {
@@ -177,6 +181,7 @@ const SELLERS = [
         name: 'Vanilla candle',
         label: ['vanilla candle', 'vanilla candles'],
         price: 18,
+        cost: 13,
         makingTimeMins: 45,
         recipe: [
           { material: 'wax', amountPerUnit: 200 },
@@ -213,7 +218,7 @@ const SELLERS = [
         customerContact: '@marcus.lim',
         platform: 'instagram',
         items: [
-          { product: p.lavender._id, variant: 'With dried lavender topping', quantity: 1 },
+          { product: p.lavender._id, variantId: variantIdOf(p.lavender, 'With dried lavender topping'), variant: 'With dried lavender topping', quantity: 1 },
           { product: p.vanilla._id, quantity: 2 },
         ],
         price: 57,
@@ -260,13 +265,14 @@ const SELLERS = [
         name: 'Chocolate chip cookies (box of 12)',
         label: ['box of chocolate chip cookies', 'boxes of chocolate chip cookies'],
         price: 15,
+        cost: 9,
         makingTimeMins: 60,
         recipe: [
           { material: 'flour', amountPerUnit: 300 },
           { material: 'butter', amountPerUnit: 150 },
           { material: 'sugar', amountPerUnit: 120 },
         ],
-        variants: [{ name: 'Gluten-free', price: 18, extras: [] }],
+        variants: [{ name: 'Gluten-free', price: 18, cost: 12, extras: [] }],
         // STEADY: reliable weekend treat with a slow rise, plus a one-week dip when the shop was on break
         demand: {
           weekday: [4, 2, 2, 2, 3, 4, 6],
@@ -280,6 +286,7 @@ const SELLERS = [
         name: 'Fudge brownies (box of 9)',
         label: ['box of fudge brownies', 'boxes of fudge brownies'],
         price: 20,
+        cost: 12,
         makingTimeMins: 50,
         recipe: [
           { material: 'flour', amountPerUnit: 200 },
@@ -317,7 +324,7 @@ const SELLERS = [
         customerName: 'Daniel Koh',
         customerContact: '@daniel.koh',
         platform: 'tiktok',
-        items: [{ product: p.cookies._id, variant: 'Gluten-free', quantity: 1 }],
+        items: [{ product: p.cookies._id, variantId: variantIdOf(p.cookies, 'Gluten-free'), variant: 'Gluten-free', quantity: 1 }],
         price: 18,
         paymentStatus: 'deposit',
         depositAmount: 5,
@@ -393,7 +400,10 @@ function buildHistoryOrders(sellerId, productDefs, productDocs, knownCustomers =
         createdAt.setHours(9, 0, 0, 0); // same day, earlier (only applies if the schema has timestamps)
 
         const item = { product: doc._id, quantity };
-        if (variant) item.variant = variant.name;
+        if (variant) {
+          item.variantId = variant._id;  // the ObjectId, which is what materialsNeeded and the forecast match on
+          item.variant = variant.name;   // keep the name too, for display
+        }
 
         const order = {
           seller: sellerId,
@@ -475,11 +485,13 @@ async function seed() {
         seller: user._id,
         name: p.name,
         price: p.price,
+        cost: p.cost,
         makingTimeMins: p.makingTimeMins,
         recipe: p.recipe.map((r) => ({ material: materialId[r.material], amountPerUnit: r.amountPerUnit })),
         variants: p.variants.map((v) => ({
           name: v.name,
           price: v.price,
+          cost: v.cost,
           extras: v.extras.map((e) => ({ material: materialId[e.material], amountPerUnit: e.amountPerUnit })),
         })),
       }))
