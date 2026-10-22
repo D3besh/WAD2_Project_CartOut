@@ -286,7 +286,7 @@ const SELLERS = [
         name: 'Fudge brownies (box of 9)',
         label: ['box of fudge brownies', 'boxes of fudge brownies'],
         price: 20,
-        cost: 12,
+        cost: 13,
         makingTimeMins: 50,
         recipe: [
           { material: 'flour', amountPerUnit: 200 },
