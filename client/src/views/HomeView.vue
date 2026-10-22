@@ -904,7 +904,7 @@ onMounted(loadShop);
           <RouterLink
             v-if="!ordersLoading && !ordersError && todaysOrders.length"
             to="/orders"
-            class="btn btn-light home-order-button home-see-all"
+            class="btn btn-light"
           >
             See all orders
           </RouterLink>

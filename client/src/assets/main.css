@@ -11,9 +11,6 @@
 
 /* ---------- 1. Design tokens ---------- */
 :root {
-  /* Layout */
-  --nav-height: 68px;
-
   /* Brand: "Blue eclipse" */
   --sk-brand: #505081;        /* buttons, links */
   --sk-brand-dark: #272757;   /* hover, active nav item */
@@ -110,8 +107,7 @@ body { -webkit-font-smoothing: antialiased; }
 h1, h2, h3, .h1, .h2, .h3 { font-weight: 800; letter-spacing: -0.02em; }
 
 /* ---------- 3. Layout ---------- */
-/* The nav is now a bar across the top, so the page no longer
-   leaves space on the left for a sidebar. */
+/* Page area under the top nav: same centred column on every page */
 .app-main {
   min-height: 100vh;
   padding: 1.25rem 1rem 2.5rem;
@@ -137,6 +133,19 @@ h1, h2, h3, .h1, .h2, .h3 { font-weight: 800; letter-spacing: -0.02em; }
   --bs-card-border-color: var(--sk-border);
   --bs-card-color: var(--sk-text);
 }
+/* Bootstrap lists and tables inside cards: no lavender background */
+.list-group {
+  --bs-list-group-bg: transparent;
+  --bs-list-group-color: var(--sk-text);
+  --bs-list-group-border-color: var(--sk-border);
+}
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--sk-text);
+  --bs-table-border-color: var(--sk-border);
+}
+.card-title { font-weight: 700; }
+
 .sk-card--hover { transition: transform 0.18s ease, box-shadow 0.18s ease; }
 .sk-card--hover:hover { transform: translateY(-2px); box-shadow: var(--sk-shadow-lift); }
 
@@ -239,17 +248,4 @@ button.chip:hover { border-color: var(--sk-brand); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-}
-
-/* ---------- 6. Top nav on small screens ---------- */
-@media (max-width: 991.98px) {
-  .app-nav .container-fluid,
-  .app-nav .container {
-    flex-wrap: wrap;
-  }
-
-  .app-nav .navbar-collapse {
-    flex-basis: 100%;
-    width: 100%;
-  }
 }

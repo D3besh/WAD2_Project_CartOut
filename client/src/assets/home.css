@@ -15,23 +15,20 @@
   box-sizing: border-box;
 }
 
-.home-order-button {
-  width: auto;
-  margin: 0;
-  white-space: nowrap;
+/* "See all" links under Running low / Fewest you can make */
+.home-link {
+  color: var(--sk-brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+.home-link:hover {
+  color: var(--sk-brand-dark);
+  text-decoration: underline;
 }
 
-/* "See all" button: a quieter, secondary style */
-.home-see-all {
-  background-color: var(--sk-surface);
-  border-color: var(--sk-border);
-  color: var(--sk-brand-dark);
-}
-
-.home-see-all:hover {
-  background-color: var(--sk-brand-soft);
-  border-color: var(--sk-border);
-  color: var(--sk-brand-dark);
+/* Warnings like "Sugar is low" (Bootstrap's yellow is too light to read) */
+.home-warning {
+  color: var(--sk-warn);
 }
 
 /* ---------- Dashboard profit graph ---------- */
