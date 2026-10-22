@@ -11,23 +11,8 @@
    5. Pop-ups      – rounded modal, recipe rows, variant boxes
    ========================================================================= */
 
-/* ---------- 0. Buttons ----------
-   Makes sure buttons on these two pages always use the theme colours
-   and natural width, even if another stylesheet changes .btn. */
-.inv-page .btn {
-  width: auto;
-  background-color: var(--bs-btn-bg);
-  color: var(--bs-btn-color);
-  border-color: var(--bs-btn-border-color);
-}
-.inv-page .btn:hover {
-  background-color: var(--bs-btn-hover-bg);
-  color: var(--bs-btn-hover-color);
-  border-color: var(--bs-btn-hover-border-color);
-}
-.inv-page .page-header .btn { flex-shrink: 0; }
-.inv-page .btn { padding: 0.5rem 1.15rem; font-size: 0.95rem; line-height: 1.4; }
-.inv-page .btn-sm { padding: 0.3rem 0.9rem; font-size: 0.85rem; }
+/* ---------- 0. Header button ---------- */
+.inv-page .page-header .btn { flex-shrink: 0; }   /* "+ Add" never squashes */
 
 /* ---------- 1. Toolbar ---------- */
 .inv-toolbar {
