@@ -34,15 +34,25 @@ import axios from "axios";
 const DATASET_ID = "d_149b61ad0a22f61c09dc80f2df5bbec8";
 const HOLIDAYS_URL = "https://data.gov.sg/api/action/datastore_search?resource_id=" + DATASET_ID;
 
+let savedDates = null;
+let savedOn = null;
+
 export async function getHolidayDates() {
+
+  let today = new Date().toISOString().slice(0, 10);
+  if (savedDates && savedOn === today) {
+    return savedDates;
+  }
+
   try {
     const response = await axios.get(HOLIDAYS_URL);
+    savedDates = response.data.result.records.map((record) => record.date);
+    savedOn = today;
+    
+    return savedDates;
 
-    console.log("Successful retrieval of public holiday dates (2026): ")
-    console.log(response.data.result.records.map((record) => record.date)) // array of dates
-    return response.data.result.records.map((record) => record.date)
   } catch (err) {
-    console.log(err.message)
-    return []
+    console.log(err.message);
+    return savedDates || [];
   }
 }

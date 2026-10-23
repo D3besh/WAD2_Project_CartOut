@@ -353,12 +353,12 @@ async function saveRestock() {
       🎯 <strong>Forecast accuracy:</strong>
       tested on the last {{ forecast.accuracy.testDays / 7 }} weeks, it was usually within
       <strong>{{ forecast.accuracy.errorPercent }}%</strong> of what you actually used each day.
-      <span v-if="forecast.accuracy.improvementPercent > 0">
+      <span v-if="forecast.method === 'weighted'">
         That's {{ forecast.accuracy.improvementPercent }}% more accurate than a simple average
         ({{ forecast.accuracy.simpleErrorPercent }}% off).
       </span>
       <span v-else>
-        (A simple average was {{ forecast.accuracy.simpleErrorPercent }}% off.)
+        A simple average did better than the weighted one here, so that's what we're using.
       </span>
     </p>
 

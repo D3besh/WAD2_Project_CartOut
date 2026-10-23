@@ -326,14 +326,16 @@ export function buildForecast(materials, products, pastOrders, upcomingOrders, h
     let accuracy = null;
     let a = accuracyById[id];
     if (a && a.avgDailyUse > 0) {
+      let chosenMae = selectedMethod === 'weighted' ? a.maeWeighted : a.maeSimple;
       accuracy = {
         maeWeighted: round1(a.maeWeighted),  // e.g. 180 (g per day)
         maeSimple: round1(a.maeSimple),
         avgDailyUse: round1(a.avgDailyUse),
-        errorPercent: Math.round((a.maeWeighted / a.avgDailyUse) * 100),       // e.g. 15
+        errorPercent: Math.round((chosenMae / a.avgDailyUse) * 100),
+        weightedErrorPercent: Math.round((a.maeWeighted / a.avgDailyUse) * 100),      // e.g. 15
         simpleErrorPercent: Math.round((a.maeSimple / a.avgDailyUse) * 100),   // e.g. 22
       };
-      percentWeighted.push(accuracy.errorPercent);
+      percentWeighted.push(accuracy.weightedErrorPercent);
       percentSimple.push(accuracy.simpleErrorPercent);
     }
 
@@ -361,7 +363,7 @@ export function buildForecast(materials, products, pastOrders, upcomingOrders, h
     let avgSimple = percentSimple.reduce((sum, p) => sum + p, 0) / percentSimple.length;
     accuracy = {
       testDays: TEST_DAYS,
-      errorPercent: Math.round(avgWeighted),        // weighted forecast: ~X% off per day
+      errorPercent: Math.round(selectedMethod === 'weighted' ? avgWeighted : avgSimple),        // weighted forecast: ~X% off per day
       simpleErrorPercent: Math.round(avgSimple),    // simple average: ~Y% off per day
       // how much smaller the weighted error is, e.g. 25 = "25% more accurate"
       improvementPercent: avgSimple > 0 ? Math.round(((avgSimple - avgWeighted) / avgSimple) * 100) : 0,
@@ -401,6 +403,7 @@ export async function forecastMaterials(sellerId, holidayDates) {
 
   let upcomingOrders = await Order.find({
     seller: sellerId,
+    status: { $ne: 'cancelled' },
     dueAt: { $gte: startOfDay(today), $lt: startOfDay(addDays(today, FORECAST_DAYS)) },
   });
 
