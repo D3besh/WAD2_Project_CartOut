@@ -42,50 +42,6 @@ export function formatAmount(amount, unit) {
   return Math.ceil(amount) + ' ' + unit;
 }
 
-// Materials that will RUN OUT within the next `withinDays` days, soonest first.
-// Each one comes back as:
-//   { id, name, daysLeft, amountText, buyBy }
-//   buyBy = the day before it runs out, or null if that's today (or already past) → "buy today"
-export function urgentBuys(forecast, withinDays) {
-  if (forecast === null) {
-    return [];
-  }
-
-  let list = [];
-  for (let m of forecast.materials) {
-    if (m.runsOutOn === null) {
-      continue; // won't run out in the next 30 days
-    }
-
-    let daysLeft = daysBetween(forecast.today, m.runsOutOn);
-    if (daysLeft > withinDays) {
-      continue; // not urgent yet
-    }
-
-    let buyBy = addDays(m.runsOutOn, -1);
-    if (buyBy <= forecast.today) {
-      buyBy = null; // buy today
-    }
-
-    list.push({
-      id: m.id,
-      name: m.name,
-      daysLeft: daysLeft,
-      amountText: formatAmount(m.suggestedBuy, m.unit),
-      buyBy: buyBy,
-    });
-  }
-
-  return list.sort((a, b) => a.daysLeft - b.daysLeft);
-}
-
-// "1 day left", "6 days left", "Runs out today"
-export function daysLeftText(daysLeft) {
-  if (daysLeft <= 0) return 'Runs out today';
-  if (daysLeft === 1) return '1 day left';
-  return daysLeft + ' days left';
-}
-
 // Materials that are already low, or go low / run out within the 30 days. Soonest first.
 //   actIn = days until you should act (0 = already low)
 //   amountText = how much to buy, e.g. "31 kg"

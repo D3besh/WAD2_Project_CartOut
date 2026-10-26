@@ -6,8 +6,6 @@ import MaterialCard from '../components/MaterialCard.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
 import { formatDay, restockWithin, restockStatusText } from '../utils/forecast.js';
 
-const restockSoon = computed(() => restockWithin(forecast.value, URGENT_DAYS));
-
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
 
@@ -42,10 +40,10 @@ const restockError = ref('');
 // Shopping list pop-up
 const showShoppingList = ref(false);
 
-// Forecast: which materials will run out soon (from the server)
+// Forecast: which materials will go low or run out soon (from the server)
 const forecast = ref(null);       // null = not loaded yet
 
-const URGENT_DAYS = 7;   // "Restock soon" only shows materials that run out within 7 days
+const URGENT_DAYS = 7;   // "Restock soon" only shows materials that go low / run out within 7 days
 const MAX_SHOWN = 3;     // and at most 3 of them (the rest are on the Forecast page)
 
 // =====================================================
@@ -135,6 +133,11 @@ const visibleMaterials = computed(() => {
   return list;
 });
 
+// Materials that will go low or run out within the next 7 days, soonest first.
+// Ones that are ALREADY low are left out here: the "running low" banner above already shows them.
+const restockSoon = computed(() => {
+  return restockWithin(forecast.value, URGENT_DAYS).filter((r) => !r.alreadyLow);
+});
 
 // Only the 3 most urgent go in the banner
 const visibleRestock = computed(() => {
@@ -318,7 +321,7 @@ async function saveRestock() {
       </button>
     </div>
 
-    <!-- ===== Restock soon: materials that run out within 7 days (max 3) ===== -->
+    <!-- ===== Restock soon: materials that go low / run out within 7 days (max 3) ===== -->
     <section v-if="restockSoon.length > 0" class="fc-restock mb-4">
       <h2 class="fc-restock__title">📅 Restock soon</h2>
 
@@ -339,9 +342,7 @@ async function saveRestock() {
       <div class="fc-foot">
         <span>Based on your last 8 weeks of orders and the orders already logged.</span>
         <RouterLink to="/forecast" class="fc-link">
-          <template v-if="restockSoon.length > MAX_SHOWN">+ {{ restockSoon.length - MAX_SHOWN }} more · </template>See
-          full
-          forecast →
+          <template v-if="restockSoon.length > MAX_SHOWN">+ {{ restockSoon.length - MAX_SHOWN }} more · </template>See full forecast →
         </RouterLink>
       </div>
     </section>

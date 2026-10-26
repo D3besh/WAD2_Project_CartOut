@@ -1,7 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
-import '../assets/inventory.css'; // shared styles (the forecast styles are in section 6)
+import '../assets/inventory.css'; // shared styles (section 6 has the day cards, tables and chart)
+import '../assets/forecast.css';  // this page's layout: tiles, tabs, cards, status pills
+import InfoTip from '../components/InfoTip.vue';
 import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
 import {
   addDays, formatDay, weekdayName, dayForecast, buildRestockPlan, restockWithin, restockStatusText,
@@ -15,9 +17,11 @@ const products = ref([]);      // for making time, variants and "can make"
 const materials = ref([]);     // for "can make"
 const errorMessage = ref('');
 
-const selectedDay = ref(1);    // which day card is selected: 1 = tomorrow ... 7
+const activeTab = ref('orders');   // 'orders' or 'materials'
+const selectedDay = ref(1);        // which day card is selected: 1 = tomorrow ... 7
+const restockRange = ref('week');  // Materials tab: 'week' or 'month' (next 30 days)
 
-// "Next 30 days by product" section
+// "Products · next 30 days" section
 const showDetails = ref(false);        // folded away at first
 const chartView = ref('week');         // 'week' or 'day'
 const chartProductId = ref(null);      // which product the chart shows (null = the first one)
@@ -94,8 +98,8 @@ function canMakeOf(product, variant) {
 // =====================================================
 // 4. THIS WEEK (the 7 day cards)
 // =====================================================
-// For each of the next 7 days: orders, expected extra, and baking time.
-// Baking time = (orders + expected extra) × the product's "time to make".
+// For each of the next 7 days: ordered, expected more, and baking time.
+// Baking time = (ordered + expected more) × the product's "time to make".
 const weekDays = computed(() => {
   if (forecast.value === null) {
     return [];
@@ -147,6 +151,10 @@ const busiestDay = computed(() => {
   return best;
 });
 
+function isBusiest(day) {
+  return busiestDay.value !== null && busiestDay.value.date === day.date;
+}
+
 // Height of the bars on a day card (in px): biggest day = 90px
 const tallestDay = computed(() => {
   let max = 1;
@@ -160,12 +168,9 @@ function barHeight(amount) {
   return Math.round((amount / tallestDay.value) * 90);
 }
 
-// Totals for the summary bar
+// Totals for the summary tiles
 const weekOrders = computed(() => weekDays.value.reduce((sum, d) => sum + d.orders, 0));
 const weekExtra = computed(() => weekDays.value.reduce((sum, d) => sum + d.extra, 0));
-
-// Materials that are already low, or go low / run out within the week
-const buyThisWeek = computed(() => restockWithin(forecast.value, WEEK_DAYS));
 
 // Products with no "time to make", so they're not in the baking time
 const missingTime = computed(() => {
@@ -258,7 +263,7 @@ function shortBy(row) {
 }
 
 // =====================================================
-// 6. NEXT 30 DAYS BY PRODUCT (folded section)
+// 6. PRODUCTS · NEXT 30 DAYS (folded section)
 // =====================================================
 
 // Table: tomorrow, next 7 days, next 30 days for one forecast row
@@ -396,31 +401,46 @@ const chartGrid = computed(() => {
   return lines;
 });
 
-// Material 30 days forecast
+// =====================================================
+// 7. MATERIALS TAB: RESTOCK PLAN
+// =====================================================
 
-// Material rows from the server (it's a plain array, not { items })
-const materialItems = computed(() => {
-  if (forecast.value === null || !forecast.value.materials) return [];
-  return forecast.value.materials;
-});
-
+// Everything that's low now, or goes low / runs out within 30 days (soonest first)
 const restockPlan = computed(() => buildRestockPlan(forecast.value));
 
-// Grouped by urgency
+// Only the ones to act on within the next 7 days
+const buyThisWeek = computed(() => restockWithin(forecast.value, WEEK_DAYS));
+const alreadyLowCount = computed(() => buyThisWeek.value.filter((r) => r.alreadyLow).length);
+
+// "Next 30 days" view: grouped by when to act
 const restockGroups = computed(() => {
   let defs = [
-    { label: '🔴 Already low', test: (r) => r.alreadyLow },
-    { label: 'Within a week', test: (r) => !r.alreadyLow && r.actIn <= 7 },
-    { label: 'Week 2 (days 8–14)', test: (r) => !r.alreadyLow && r.actIn > 7 && r.actIn <= 14 },
-    { label: 'Weeks 3–4 (days 15–30)', test: (r) => !r.alreadyLow && r.actIn > 14 },
+    { label: 'Already low', test: (r) => r.alreadyLow },
+    { label: 'This week', test: (r) => !r.alreadyLow && r.actIn <= 7 },
+    { label: 'Next week (days 8–14)', test: (r) => !r.alreadyLow && r.actIn > 7 && r.actIn <= 14 },
+    { label: 'Later this month (days 15–30)', test: (r) => !r.alreadyLow && r.actIn > 14 },
   ];
   return defs
     .map((d) => ({ label: d.label, rows: restockPlan.value.filter(d.test) }))
     .filter((g) => g.rows.length > 0);
 });
 
-const showRestock = ref(false);
+// What the Materials tab shows: one group for "This week", or all groups for "Next 30 days"
+const visibleGroups = computed(() => {
+  if (restockRange.value === 'week') {
+    return buyThisWeek.value.length > 0 ? [{ label: '', rows: buyThisWeek.value }] : [];
+  }
+  return restockGroups.value;
+});
 
+// Colour of the status pill. The same colours mean the same thing everywhere on the page:
+//   red = now / today, orange = within 3 days, amber = this week, purple = later
+function pillClass(r) {
+  if (r.alreadyLow || r.actIn <= 0) return 'fc-pill--now';
+  if (r.actIn <= 3) return 'fc-pill--soon';
+  if (r.actIn <= 7) return 'fc-pill--week';
+  return 'fc-pill--later';
+}
 </script>
 
 <template>
@@ -430,8 +450,8 @@ const showRestock = ref(false);
       <div>
         <h1>Forecast</h1>
         <p v-if="weekDays.length > 0">
-          This week, {{ formatDay(weekDays[0].date) }} – {{ formatDay(weekDays[weekDays.length - 1].date) }}:
-          what's ordered, what to expect, and how much work it is
+          {{ formatDay(weekDays[0].date) }} – {{ formatDay(weekDays[weekDays.length - 1].date) }}
+          · based on your last 8 weeks of orders
         </p>
       </div>
     </header>
@@ -447,58 +467,138 @@ const showRestock = ref(false);
         📅 The forecast starts working once you have some completed orders. For now it only shows orders already logged.
       </p>
 
-      <!-- ===== Summary bar ===== -->
-      <div class="wk-summary mb-4">
-        <span v-if="busiestDay !== null" class="wk-summary__item">
-          🔥 Busiest: <strong>{{ weekdayName(busiestDay.date) }}</strong>
-          <template v-if="busiestDay.minutes > 0">, {{ formatTime(busiestDay.minutes) }} of baking</template>
-        </span>
-        <span class="wk-summary__item">
-          📦 <strong>{{ weekOrders }}</strong> order(s) · <strong>~{{ weekExtra }}</strong> more expected
-        </span>
-        <span class="wk-summary__item">
-          🛒 <strong>{{ buyThisWeek.length }}</strong> material(s) need restocking this week
-        </span>
+      <!-- ===================================================== -->
+      <!-- SUMMARY TILES                                          -->
+      <!-- ===================================================== -->
+      <div class="fc-tiles">
+        <div class="fc-tile">
+          <span class="fc-tile__icon is-red" aria-hidden="true">🔥</span>
+          <div>
+            <div class="fc-tile__label">Busiest day</div>
+            <template v-if="busiestDay !== null">
+              <div class="fc-tile__value is-red">{{ formatDay(busiestDay.date) }}</div>
+              <div class="fc-tile__sub">
+                <template v-if="busiestDay.minutes > 0">{{ formatTime(busiestDay.minutes) }} of baking</template>
+                <template v-else>{{ busiestDay.orders + busiestDay.extra }} items</template>
+              </div>
+            </template>
+            <div v-else class="fc-tile__value">—</div>
+          </div>
+        </div>
+
+        <div class="fc-tile">
+          <span class="fc-tile__icon is-purple" aria-hidden="true">📦</span>
+          <div>
+            <div class="fc-tile__label">This week</div>
+            <div class="fc-tile__value">{{ weekOrders }} ordered</div>
+            <div class="fc-tile__sub">+ ~{{ weekExtra }} more expected</div>
+          </div>
+        </div>
+
+        <div class="fc-tile">
+          <span class="fc-tile__icon is-amber" aria-hidden="true">🛒</span>
+          <div>
+            <div class="fc-tile__label">To buy this week</div>
+            <div class="fc-tile__value">{{ buyThisWeek.length }} material(s)</div>
+            <div class="fc-tile__sub">
+              <template v-if="alreadyLowCount > 0">{{ alreadyLowCount }} already low</template>
+              <template v-else>None low yet</template>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- ===== 7 day cards ===== -->
-      <div class="wk-strip mb-2">
-        <button v-for="day in weekDays" :key="day.date" type="button" class="wk-day"
-          :class="{ 'is-selected': selectedDay === day.index }" :aria-pressed="selectedDay === day.index"
-          @click="selectedDay = day.index">
-          <span class="wk-day__name">{{ day.index === 1 ? 'Tomorrow' : weekdayName(day.date).slice(0, 3) }}</span>
-          <span class="wk-day__date">{{ formatDay(day.date) }}</span>
-
-          <span class="wk-bars" aria-hidden="true">
-            <span class="wk-bars__extra" :style="{ height: barHeight(day.extra) + 'px' }"></span>
-            <span class="wk-bars__orders" :style="{ height: barHeight(day.orders) + 'px' }"></span>
-          </span>
-
-          <span class="wk-day__nums"><strong>{{ day.orders }}</strong> order(s)<br />+ ~{{ day.extra }} expected</span>
-          <span class="wk-day__time" :class="{ 'is-busy': busiestDay !== null && busiestDay.date === day.date }">
-            ⏱ {{ formatTime(day.minutes) }}
-          </span>
-          <span v-if="busiestDay !== null && busiestDay.date === day.date" class="wk-tag wk-tag--busy">Busiest
-            day</span>
-          <span v-if="day.holiday" class="wk-tag wk-tag--holiday" title="Orders may be higher or lower than usual">
-            Public holiday*
-          </span>
+      <!-- ===================================================== -->
+      <!-- TABS                                                   -->
+      <!-- ===================================================== -->
+      <div class="fc-tabs" role="tablist" aria-label="Forecast">
+        <button
+          type="button"
+          role="tab"
+          class="fc-tab"
+          :class="{ 'is-active': activeTab === 'orders' }"
+          :aria-selected="activeTab === 'orders'"
+          @click="activeTab = 'orders'"
+        >
+          📦 Orders
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="fc-tab"
+          :class="{ 'is-active': activeTab === 'materials' }"
+          :aria-selected="activeTab === 'materials'"
+          @click="activeTab = 'materials'"
+        >
+          🧂 Materials
+          <span v-if="buyThisWeek.length > 0" class="fc-tab__count">{{ buyThisWeek.length }}</span>
         </button>
       </div>
-      <p class="inv-meta mb-4">
-        <span class="fc-key fc-key--orders"></span>Orders already logged
-        <span class="fc-key fc-key--extra ms-3"></span>Expected extra
-        <template v-if="weekDays.some((d) => d.holiday)">
-          · *On public holidays, orders may be higher or lower than usual.
-        </template>
-      </p>
 
-      <div class="wk-two mb-4">
+      <!-- ===================================================== -->
+      <!-- ORDERS TAB                                             -->
+      <!-- ===================================================== -->
+      <div v-if="activeTab === 'orders'" role="tabpanel">
+
+        <!-- ===== Each day this week ===== -->
+        <section class="sk-card fc-card fc-card--orders mb-3">
+          <InfoTip label="How the day cards work">
+            <strong>Dark</strong> = items already in your Order log, due that day.<br />
+            <strong>Light</strong> = how many <strong>more</strong> usually come in for that weekday, learned from
+            your last 8 weeks (recent weeks count more).<br />
+            <strong>Time</strong> = all those items × each product's "time to make".
+          </InfoTip>
+          <h2 class="fc-card__title">Each day this week</h2>
+          <p class="fc-card__hint">Click a day to see it below</p>
+
+          <div class="wk-strip">
+            <button
+              v-for="day in weekDays"
+              :key="day.date"
+              type="button"
+              class="wk-day"
+              :class="{ 'is-selected': selectedDay === day.index, 'is-busiest': isBusiest(day) }"
+              :aria-pressed="selectedDay === day.index"
+              @click="selectedDay = day.index"
+            >
+              <span class="wk-day__name">{{ day.index === 1 ? 'Tomorrow' : weekdayName(day.date).slice(0, 3) }}</span>
+              <span class="wk-day__date">{{ formatDay(day.date) }}</span>
+
+              <span class="wk-bars" aria-hidden="true">
+                <span class="wk-bars__extra" :style="{ height: barHeight(day.extra) + 'px' }"></span>
+                <span class="wk-bars__orders" :style="{ height: barHeight(day.orders) + 'px' }"></span>
+              </span>
+
+              <span class="wk-day__nums"><strong>{{ day.orders }}</strong> ordered<br />+ ~{{ day.extra }} more</span>
+              <span class="wk-day__time" :class="{ 'is-busy': isBusiest(day) }">⏱ {{ formatTime(day.minutes) }}</span>
+              <span v-if="isBusiest(day)" class="wk-tag wk-tag--busy">Busiest</span>
+              <span v-if="day.holiday" class="wk-tag wk-tag--holiday">Public holiday*</span>
+            </button>
+          </div>
+
+          <p class="inv-meta mt-2 mb-0">
+            <span class="fc-key fc-key--orders"></span>Already ordered
+            <span class="fc-key fc-key--extra ms-3"></span>Expected more
+            <template v-if="weekDays.some((d) => d.holiday)">
+              · *On public holidays, orders may be higher or lower than usual.
+            </template>
+          </p>
+        </section>
 
         <!-- ===== The selected day ===== -->
-        <section class="sk-card">
-          <h2 class="fc-panel-title">{{ formatDay(selectedDate) }}</h2>
-          <p class="inv-meta mb-2">Click a day above to see it here</p>
+        <section class="sk-card fc-card fc-card--orders mb-3">
+          <InfoTip label="How this table works">
+            <template v-if="showCanMake">
+              <strong>Can make now</strong> is worked out from today's stock. Orders you've logged already had their
+              materials taken out, so we only check it against the <strong>expected more</strong>.
+            </template>
+            <template v-else>
+              <strong>Can make now</strong> is only shown for tomorrow, because your stock will change before then.
+            </template>
+            <br /><strong>Time</strong> = items × "time to make".
+          </InfoTip>
+          <h2 class="fc-card__title">{{ formatDay(selectedDate) }}</h2>
+          <p class="fc-card__hint">What to make<template v-if="showCanMake">, and whether you have enough</template></p>
 
           <p v-if="dayRows.length === 0" class="inv-meta">Nothing ordered or expected for this day.</p>
 
@@ -507,8 +607,8 @@ const showRestock = ref(false);
               <thead>
                 <tr>
                   <th scope="col">Product</th>
-                  <th scope="col">Orders</th>
-                  <th scope="col">Expected extra</th>
+                  <th scope="col">Ordered</th>
+                  <th scope="col">Expected more</th>
                   <th v-if="showCanMake" scope="col">Can make now</th>
                   <th scope="col">Time</th>
                 </tr>
@@ -541,149 +641,150 @@ const showRestock = ref(false);
             </table>
           </div>
 
-          <p v-if="showCanMake" class="fc-note">
-            "Can make now" already has the logged orders taken out of stock, so it's compared with the
-            <strong>expected extra</strong> only.
-          </p>
-          <p v-else class="fc-note">"Can make now" is only shown for tomorrow, because your stock will change before
-            then.</p>
           <p v-if="missingTime.length > 0" class="fc-note">
             Not in the time: {{ missingTime.join(', ') }} (no "time to make" set).
           </p>
         </section>
 
-        <!-- ===== Buy this week ===== -->
-        <section class="sk-card">
-          <h2 class="fc-panel-title mb-2">🛒 Buy this week</h2>
-          <p v-if="buyThisWeek.length === 0" class="inv-meta">Nothing needs restocking this week.</p>
-          <div v-for="item in buyThisWeek" :key="item.id" class="fc-buy">
-            <div>
-              <strong>{{ item.name }}</strong>
-              <div class="inv-meta">
-                {{ restockStatusText(item) }}
-                <template v-if="item.amountText"> · buy ~{{ item.amountText }}</template>
+        <!-- ===== Products · next 30 days (folded) ===== -->
+        <button type="button" class="fc-details" :aria-expanded="showDetails" @click="showDetails = !showDetails">
+          <span>{{ showDetails ? '▾' : '▸' }} Products · next 30 days</span>
+          <span class="fc-details__hint">Demand per product, by week or day</span>
+        </button>
+
+        <section v-if="showDetails" class="sk-card fc-card fc-card--orders mt-3">
+          <InfoTip label="How the 30-day chart works">
+            Each bar is one day or one week. <strong>Dark</strong> = already ordered,
+            <strong>light</strong> = expected more, based on your usual sales for each weekday.
+            Click a product in the table to show it in the chart and open its variants.
+          </InfoTip>
+          <p v-if="productItems.length === 0" class="inv-meta">No products to forecast yet.</p>
+
+          <template v-else>
+            <div class="fc-toolbar">
+              <div>
+                <h2 class="fc-card__title">{{ chartItem.name }}</h2>
+                <span class="inv-meta">All options · click a product in the table to show it here</span>
+              </div>
+              <div class="fc-seg" role="group" aria-label="Show by">
+                <button type="button" :class="{ 'is-on': chartView === 'week' }" @click="chartView = 'week'">Week</button>
+                <button type="button" :class="{ 'is-on': chartView === 'day' }" @click="chartView = 'day'">Day</button>
               </div>
             </div>
-            <span v-if="item.actOn === null" class="fc-buy__when is-red">Today</span>
-            <span v-else class="fc-buy__when">by {{ formatDay(item.actOn) }}</span>
-          </div>
-          <RouterLink to="/materials" class="fc-link d-inline-block mt-2">All materials →</RouterLink>
+
+            <!-- Bar chart: dark = already ordered, light = expected more -->
+            <svg
+              class="fc-chart"
+              :viewBox="`0 0 ${CHART_W} ${CHART_H}`"
+              role="img"
+              :aria-label="`Expected sales of ${chartItem.name} by ${chartView}`"
+            >
+              <g v-for="line in chartGrid" :key="line.y">
+                <line class="fc-chart__grid" :x1="CHART_LEFT" :x2="CHART_W" :y1="line.y" :y2="line.y" />
+                <text class="fc-chart__label" :x="CHART_LEFT - 6" :y="line.y + 4" text-anchor="end">{{ line.value }}</text>
+              </g>
+              <g v-for="(bar, i) in chartShapes" :key="i">
+                <rect class="fc-chart__extra" :x="bar.x" :y="bar.extraY" :width="bar.width" :height="bar.extraH" rx="2" />
+                <rect class="fc-chart__orders" :x="bar.x" :y="bar.ordersY" :width="bar.width" :height="bar.ordersH" rx="2" />
+                <text v-if="bar.top" class="fc-chart__top" :x="bar.centre" :y="bar.extraY - 6" text-anchor="middle">{{ bar.top }}</text>
+                <text v-if="bar.label" class="fc-chart__label" :x="bar.centre" :y="CHART_H - 10" text-anchor="middle">{{ bar.label }}</text>
+              </g>
+            </svg>
+
+            <div class="table-responsive mt-3">
+              <table class="fc-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Product</th>
+                    <th scope="col">Tomorrow</th>
+                    <th scope="col">Next 7 days</th>
+                    <th scope="col">Next 30 days</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template v-for="item in productItems" :key="item.id">
+                    <tr class="is-clickable" :class="{ 'is-selected': chartItem.id === item.id }" @click="selectProduct(item.id)">
+                      <td>
+                        <span class="fc-caret">
+                          <template v-if="variantItems(item.id).length > 0">{{ openProducts.includes(item.id) ? '▾' : '▸' }}</template>
+                        </span>
+                        <strong>{{ item.name }}</strong>
+                      </td>
+                      <td>~{{ totalsFor(item.id).tomorrow }}</td>
+                      <td>~{{ totalsFor(item.id).week }}</td>
+                      <td>~{{ totalsFor(item.id).month }}</td>
+                    </tr>
+                    <template v-if="openProducts.includes(item.id)">
+                      <tr v-for="v in variantItems(item.id)" :key="v.id" class="is-variant">
+                        <td>{{ v.variant }}</td>
+                        <td>~{{ totalsFor(v.id).tomorrow }}</td>
+                        <td>~{{ totalsFor(v.id).week }}</td>
+                        <td>~{{ totalsFor(v.id).month }}</td>
+                      </tr>
+                    </template>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
         </section>
       </div>
 
-      <!-- ===== Next 30 days by product (folded) ===== -->
-      <button type="button" class="fc-details" :aria-expanded="showDetails" @click="showDetails = !showDetails">
-        <span>{{ showDetails ? '▾' : '▸' }} Next 30 days by product</span>
-        <span class="fc-details__hint">For planning further ahead</span>
-      </button>
+      <!-- ===================================================== -->
+      <!-- MATERIALS TAB                                          -->
+      <!-- ===================================================== -->
+      <div v-if="activeTab === 'materials'" role="tabpanel">
+        <section class="sk-card fc-card fc-card--materials">
+          <InfoTip label="How the restock plan works">
+            <strong>Low in 3 days</strong> = the day this material is expected to drop below your low-stock level,
+            if sales follow your usual weekly pattern.<br />
+            <strong>Buy</strong> = enough for the next 30 days, so you stay above that level.<br />
+            <span class="info-dot is-now"></span>Low now / today
+            <span class="info-dot is-soon"></span>≤ 3 days
+            <span class="info-dot is-week"></span>this week
+            <span class="info-dot is-later"></span>later
+          </InfoTip>
 
-      <section v-if="showDetails" class="sk-card mt-3">
-        <p v-if="productItems.length === 0" class="inv-meta">No products to forecast yet.</p>
-
-        <template v-else>
-          <div class="fc-toolbar">
+          <div class="fc-card__head">
             <div>
-              <h2 class="fc-panel-title">{{ chartItem.name }}</h2>
-              <span class="inv-meta">All options · click a product in the table to show it here</span>
+              <h2 class="fc-card__title">Restock plan</h2>
+              <p class="fc-card__hint">Buy amounts last 30 days and keep you above your low-stock level</p>
             </div>
-            <div class="fc-seg" role="group" aria-label="Show by">
-              <button type="button" :class="{ 'is-on': chartView === 'week' }" @click="chartView = 'week'">Week</button>
-              <button type="button" :class="{ 'is-on': chartView === 'day' }" @click="chartView = 'day'">Day</button>
+            <div class="fc-seg" role="group" aria-label="Show restocking for">
+              <button type="button" :class="{ 'is-on': restockRange === 'week' }" @click="restockRange = 'week'">This week</button>
+              <button type="button" :class="{ 'is-on': restockRange === 'month' }" @click="restockRange = 'month'">Next 30 days</button>
             </div>
           </div>
 
-          <!-- Bar chart: dark = orders already logged, light = expected extra -->
-          <svg class="fc-chart" :viewBox="`0 0 ${CHART_W} ${CHART_H}`" role="img"
-            :aria-label="`Expected sales of ${chartItem.name} by ${chartView}`">
-            <g v-for="line in chartGrid" :key="line.y">
-              <line class="fc-chart__grid" :x1="CHART_LEFT" :x2="CHART_W" :y1="line.y" :y2="line.y" />
-              <text class="fc-chart__label" :x="CHART_LEFT - 6" :y="line.y + 4" text-anchor="end">{{ line.value
-                }}</text>
-            </g>
-            <g v-for="(bar, i) in chartShapes" :key="i">
-              <rect class="fc-chart__extra" :x="bar.x" :y="bar.extraY" :width="bar.width" :height="bar.extraH" rx="2" />
-              <rect class="fc-chart__orders" :x="bar.x" :y="bar.ordersY" :width="bar.width" :height="bar.ordersH"
-                rx="2" />
-              <text v-if="bar.top" class="fc-chart__top" :x="bar.centre" :y="bar.extraY - 6" text-anchor="middle">{{
-                bar.top }}</text>
-              <text v-if="bar.label" class="fc-chart__label" :x="bar.centre" :y="CHART_H - 10" text-anchor="middle">{{
-                bar.label }}</text>
-            </g>
-          </svg>
+          <p v-if="visibleGroups.length === 0" class="inv-meta mt-2">
+            <template v-if="restockRange === 'week'">Nothing needs restocking this week.</template>
+            <template v-else>Nothing is expected to go low or run out in the next 30 days.</template>
+          </p>
 
-          <div class="table-responsive mt-3">
-            <table class="fc-table">
-              <thead>
-                <tr>
-                  <th scope="col">Product</th>
-                  <th scope="col">Tomorrow</th>
-                  <th scope="col">Next 7 days</th>
-                  <th scope="col">Next 30 days</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template v-for="item in productItems" :key="item.id">
-                  <tr class="is-clickable" :class="{ 'is-selected': chartItem.id === item.id }"
-                    @click="selectProduct(item.id)">
-                    <td>
-                      <span class="fc-caret">
-                        <template v-if="variantItems(item.id).length > 0">{{ openProducts.includes(item.id) ? '▾' : '▸'
-                          }}</template>
-                      </span>
-                      <strong>{{ item.name }}</strong>
-                    </td>
-                    <td>~{{ totalsFor(item.id).tomorrow }}</td>
-                    <td>~{{ totalsFor(item.id).week }}</td>
-                    <td>~{{ totalsFor(item.id).month }}</td>
-                  </tr>
-                  <template v-if="openProducts.includes(item.id)">
-                    <tr v-for="v in variantItems(item.id)" :key="v.id" class="is-variant">
-                      <td>{{ v.variant }}</td>
-                      <td>~{{ totalsFor(v.id).tomorrow }}</td>
-                      <td>~{{ totalsFor(v.id).week }}</td>
-                      <td>~{{ totalsFor(v.id).month }}</td>
-                    </tr>
-                  </template>
-                </template>
-              </tbody>
-            </table>
-          </div>
-        </template>
-      </section>
+          <div v-for="group in visibleGroups" :key="group.label">
+            <h3 v-if="group.label" class="fc-group">{{ group.label }}</h3>
 
-      <button type="button" class="fc-details mt-3" :aria-expanded="showRestock" @click="showRestock = !showRestock">
-        <span>{{ showRestock ? '▾' : '▸' }} Restock plan: next 30 days</span>
-        <span class="fc-details__hint">{{ restockPlan.length }} material(s) going low or running out</span>
-      </button>
-
-      <section v-if="showRestock" class="sk-card mt-3">
-        <p v-if="restockPlan.length === 0" class="inv-meta">
-          Nothing is expected to go low or run out in the next 30 days.
-        </p>
-
-        <div v-for="group in restockGroups" :key="group.label" class="mb-3">
-          <h3 class="fc-panel-title mb-2">{{ group.label }}</h3>
-          <div v-for="m in group.rows" :key="m.id" class="fc-buy">
-            <div>
-              <strong>{{ m.name }}</strong>
-              <div class="inv-meta">
-                {{ m.quantity }} {{ m.unit }} in stock
-                <template v-if="m.alreadyLow"> · already at or below the low-stock level</template>
-                <template v-else-if="m.runsLowOn"> · low by {{ formatDay(m.runsLowOn) }}</template>
+            <div v-for="m in group.rows" :key="m.id" class="fc-rrow">
+              <div class="fc-rrow__name">
+                {{ m.name }}
+                <span class="fc-pill" :class="pillClass(m)">{{ restockStatusText(m) }}</span>
+              </div>
+              <div class="fc-rrow__meta">
+                {{ m.quantity }} {{ m.unit }} left
+                <template v-if="m.lowStockThreshold != null"> · low below {{ m.lowStockThreshold }} {{ m.unit }}</template>
                 <template v-if="m.runsOutOn"> · runs out {{ formatDay(m.runsOutOn) }}</template>
               </div>
+              <div class="fc-rrow__buy">
+                <strong>{{ m.amountText ? '~' + m.amountText : '—' }}</strong>
+                <span v-if="m.actOn === null" class="is-red">today</span>
+                <span v-else>by {{ formatDay(m.actOn) }}</span>
+              </div>
             </div>
-            <span class="fc-buy__when" :class="{ 'is-red': m.alreadyLow || m.actIn <= 7 }">
-              {{ m.amountText ? 'Buy ~' + m.amountText : '—' }}
-            </span>
           </div>
-        </div>
 
-        <p class="fc-note">
-          Based on your usual weekday pattern, so it's an estimate. "Buy" is the amount that
-          covers the full 30 days and keeps you above the low-stock level.
-        </p>
-      </section>
+          <RouterLink to="/materials" class="fc-link d-inline-block mt-3">All materials →</RouterLink>
+        </section>
+      </div>
 
     </template>
   </div>
