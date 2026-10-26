@@ -4,7 +4,9 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import MaterialCard from '../components/MaterialCard.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
-import { formatDay, urgentBuys, daysLeftText } from '../utils/forecast.js';
+import { formatDay, restockWithin, restockStatusText } from '../utils/forecast.js';
+
+const restockSoon = computed(() => restockWithin(forecast.value, URGENT_DAYS));
 
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
@@ -133,10 +135,6 @@ const visibleMaterials = computed(() => {
   return list;
 });
 
-// Materials that will run out within the next 7 days, soonest first
-const restockSoon = computed(() => {
-  return urgentBuys(forecast.value, URGENT_DAYS);
-});
 
 // Only the 3 most urgent go in the banner
 const visibleRestock = computed(() => {
@@ -327,20 +325,23 @@ async function saveRestock() {
       <div v-for="item in visibleRestock" :key="item.id" class="fc-row">
         <span class="fc-row__name">{{ item.name }}</span>
         <div class="fc-bar" aria-hidden="true">
-          <span :class="barColour(item.daysLeft)" :style="{ width: barPercent(item.daysLeft) + '%' }"></span>
+          <span :class="barColour(item.actIn)" :style="{ width: barPercent(item.actIn) + '%' }"></span>
         </div>
-        <span class="fc-days" :class="barColour(item.daysLeft)">{{ daysLeftText(item.daysLeft) }}</span>
+        <span class="fc-days" :class="barColour(item.actIn)">{{ restockStatusText(item) }}</span>
         <div class="fc-action">
-          Buy <strong>~{{ item.amountText }}</strong>
-          <strong v-if="item.buyBy === null">today</strong>
-          <template v-else>by <strong>{{ formatDay(item.buyBy) }}</strong></template>
+          <template v-if="item.amountText">Buy <strong>~{{ item.amountText }}</strong></template>
+          <template v-else>Check stock</template>
+          <strong v-if="item.actOn === null"> today</strong>
+          <template v-else> by <strong>{{ formatDay(item.actOn) }}</strong></template>
         </div>
       </div>
 
       <div class="fc-foot">
         <span>Based on your last 8 weeks of orders and the orders already logged.</span>
         <RouterLink to="/forecast" class="fc-link">
-          <template v-if="restockSoon.length > MAX_SHOWN">+ {{ restockSoon.length - MAX_SHOWN }} more · </template>See full forecast →
+          <template v-if="restockSoon.length > MAX_SHOWN">+ {{ restockSoon.length - MAX_SHOWN }} more · </template>See
+          full
+          forecast →
         </RouterLink>
       </div>
     </section>
@@ -361,26 +362,16 @@ async function saveRestock() {
           <span v-if="lowMaterials.length > 0" class="count">{{ lowMaterials.length }}</span>
         </button>
       </div>
-      <input
-        id="material-search"
-        v-model="search"
-        class="form-control inv-search"
-        placeholder="Search materials"
-        aria-label="Search materials"
-      />
+      <input id="material-search" v-model="search" class="form-control inv-search" placeholder="Search materials"
+        aria-label="Search materials" />
     </div>
 
     <!-- ===== Material cards ===== -->
     <TransitionGroup v-if="visibleMaterials.length > 0" name="list" tag="div" class="sk-grid">
 
       <!-- Prop: :material.  Events: @restock and @edit (the card sends the material back). -->
-      <MaterialCard
-        v-for="m in visibleMaterials"
-        :key="m.id"
-        :material="m"
-        @restock="markRestocked"
-        @edit="openEditForm"
-      >
+      <MaterialCard v-for="m in visibleMaterials" :key="m.id" :material="m" @restock="markRestocked"
+        @edit="openEditForm">
         <!-- Everything in here goes into the card's <slot> -->
 
         <!-- Quantity materials show a number -->
@@ -445,20 +436,12 @@ async function saveRestock() {
 
             <span class="form-label d-block">How do you track it?</span>
             <div class="inv-segment mb-3">
-              <button
-                type="button"
-                class="chip"
-                :class="{ 'is-active': form.trackingMode === 'quantity' }"
-                @click="form.trackingMode = 'quantity'"
-              >
+              <button type="button" class="chip" :class="{ 'is-active': form.trackingMode === 'quantity' }"
+                @click="form.trackingMode = 'quantity'">
                 Exact amount
               </button>
-              <button
-                type="button"
-                class="chip"
-                :class="{ 'is-active': form.trackingMode === 'level' }"
-                @click="form.trackingMode = 'level'"
-              >
+              <button type="button" class="chip" :class="{ 'is-active': form.trackingMode === 'level' }"
+                @click="form.trackingMode = 'level'">
                 Low / Medium / High
               </button>
             </div>
@@ -471,7 +454,8 @@ async function saveRestock() {
               </div>
               <div class="col-sm-6">
                 <label for="material-threshold" class="form-label">Warn me below (optional)</label>
-                <input id="material-threshold" v-model.number="form.lowStockThreshold" type="number" min="0" class="form-control" />
+                <input id="material-threshold" v-model.number="form.lowStockThreshold" type="number" min="0"
+                  class="form-control" />
               </div>
             </div>
 
@@ -487,12 +471,8 @@ async function saveRestock() {
           </div>
 
           <div class="modal-footer">
-            <button
-              v-if="editingId !== null"
-              type="button"
-              class="btn btn-outline-danger btn-sm me-auto"
-              @click="deleteMaterial"
-            >
+            <button v-if="editingId !== null" type="button" class="btn btn-outline-danger btn-sm me-auto"
+              @click="deleteMaterial">
               Delete
             </button>
             <button type="button" class="btn btn-light" @click="showForm = false">Cancel</button>
@@ -515,7 +495,9 @@ async function saveRestock() {
 
           <div class="modal-body">
             <div v-if="restockError" class="inv-banner inv-banner--danger mb-3">{{ restockError }}</div>
-            <p class="inv-meta mb-3">You have <strong>{{ restockTarget.quantity }} {{ restockTarget.unit }}</strong> now.</p>
+            <p class="inv-meta mb-3">You have <strong>{{ restockTarget.quantity }} {{ restockTarget.unit }}</strong>
+              now.
+            </p>
             <label for="restock-amount" class="form-label">How much did you buy?</label>
             <div class="input-group">
               <input id="restock-amount" v-model.number="restockAmount" type="number" min="0" class="form-control" />

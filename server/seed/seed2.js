@@ -35,7 +35,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const daysFromNow = (d) => new Date(Date.now() + d * DAY_MS);
 
 // ---------- History settings ----------
-const HISTORY_DAYS = 84; // 12 weeks of past orders (yesterday back to 84 days ago)
+const HISTORY_DAYS = 100;
 const REPEAT_CUSTOMERS = 24; // generated regulars per seller (on top of the known ones)
 const ONE_OFF_SHARE = 0.22; // share of orders from first-time / one-off customers
 const NOISE = 0.15; // ±15% random day-to-day variation (set 0 for a perfectly clean pattern)

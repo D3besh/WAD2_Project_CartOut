@@ -4,7 +4,7 @@ import axios from 'axios';
 import '../assets/inventory.css'; // shared styles (the forecast styles are in section 6)
 import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
 import {
-  addDays, formatDay, weekdayName, urgentBuys, daysLeftText, dayForecast,
+  addDays, formatDay, weekdayName, dayForecast, buildRestockPlan, restockWithin, restockStatusText,
 } from '../utils/forecast.js';
 
 // =====================================================
@@ -164,8 +164,8 @@ function barHeight(amount) {
 const weekOrders = computed(() => weekDays.value.reduce((sum, d) => sum + d.orders, 0));
 const weekExtra = computed(() => weekDays.value.reduce((sum, d) => sum + d.extra, 0));
 
-// Materials that run out within the week
-const buyThisWeek = computed(() => urgentBuys(forecast.value, WEEK_DAYS));
+// Materials that are already low, or go low / run out within the week
+const buyThisWeek = computed(() => restockWithin(forecast.value, WEEK_DAYS));
 
 // Products with no "time to make", so they're not in the baking time
 const missingTime = computed(() => {
@@ -395,6 +395,32 @@ const chartGrid = computed(() => {
   }
   return lines;
 });
+
+// Material 30 days forecast
+
+// Material rows from the server (it's a plain array, not { items })
+const materialItems = computed(() => {
+  if (forecast.value === null || !forecast.value.materials) return [];
+  return forecast.value.materials;
+});
+
+const restockPlan = computed(() => buildRestockPlan(forecast.value));
+
+// Grouped by urgency
+const restockGroups = computed(() => {
+  let defs = [
+    { label: '🔴 Already low', test: (r) => r.alreadyLow },
+    { label: 'Within a week', test: (r) => !r.alreadyLow && r.actIn <= 7 },
+    { label: 'Week 2 (days 8–14)', test: (r) => !r.alreadyLow && r.actIn > 7 && r.actIn <= 14 },
+    { label: 'Weeks 3–4 (days 15–30)', test: (r) => !r.alreadyLow && r.actIn > 14 },
+  ];
+  return defs
+    .map((d) => ({ label: d.label, rows: restockPlan.value.filter(d.test) }))
+    .filter((g) => g.rows.length > 0);
+});
+
+const showRestock = ref(false);
+
 </script>
 
 <template>
@@ -431,21 +457,15 @@ const chartGrid = computed(() => {
           📦 <strong>{{ weekOrders }}</strong> order(s) · <strong>~{{ weekExtra }}</strong> more expected
         </span>
         <span class="wk-summary__item">
-          🛒 <strong>{{ buyThisWeek.length }}</strong> material(s) run out this week
+          🛒 <strong>{{ buyThisWeek.length }}</strong> material(s) need restocking this week
         </span>
       </div>
 
       <!-- ===== 7 day cards ===== -->
       <div class="wk-strip mb-2">
-        <button
-          v-for="day in weekDays"
-          :key="day.date"
-          type="button"
-          class="wk-day"
-          :class="{ 'is-selected': selectedDay === day.index }"
-          :aria-pressed="selectedDay === day.index"
-          @click="selectedDay = day.index"
-        >
+        <button v-for="day in weekDays" :key="day.date" type="button" class="wk-day"
+          :class="{ 'is-selected': selectedDay === day.index }" :aria-pressed="selectedDay === day.index"
+          @click="selectedDay = day.index">
           <span class="wk-day__name">{{ day.index === 1 ? 'Tomorrow' : weekdayName(day.date).slice(0, 3) }}</span>
           <span class="wk-day__date">{{ formatDay(day.date) }}</span>
 
@@ -458,7 +478,8 @@ const chartGrid = computed(() => {
           <span class="wk-day__time" :class="{ 'is-busy': busiestDay !== null && busiestDay.date === day.date }">
             ⏱ {{ formatTime(day.minutes) }}
           </span>
-          <span v-if="busiestDay !== null && busiestDay.date === day.date" class="wk-tag wk-tag--busy">Busiest day</span>
+          <span v-if="busiestDay !== null && busiestDay.date === day.date" class="wk-tag wk-tag--busy">Busiest
+            day</span>
           <span v-if="day.holiday" class="wk-tag wk-tag--holiday" title="Orders may be higher or lower than usual">
             Public holiday*
           </span>
@@ -524,7 +545,8 @@ const chartGrid = computed(() => {
             "Can make now" already has the logged orders taken out of stock, so it's compared with the
             <strong>expected extra</strong> only.
           </p>
-          <p v-else class="fc-note">"Can make now" is only shown for tomorrow, because your stock will change before then.</p>
+          <p v-else class="fc-note">"Can make now" is only shown for tomorrow, because your stock will change before
+            then.</p>
           <p v-if="missingTime.length > 0" class="fc-note">
             Not in the time: {{ missingTime.join(', ') }} (no "time to make" set).
           </p>
@@ -533,26 +555,24 @@ const chartGrid = computed(() => {
         <!-- ===== Buy this week ===== -->
         <section class="sk-card">
           <h2 class="fc-panel-title mb-2">🛒 Buy this week</h2>
-          <p v-if="buyThisWeek.length === 0" class="inv-meta">Nothing runs out this week.</p>
+          <p v-if="buyThisWeek.length === 0" class="inv-meta">Nothing needs restocking this week.</p>
           <div v-for="item in buyThisWeek" :key="item.id" class="fc-buy">
             <div>
               <strong>{{ item.name }}</strong>
-              <div class="inv-meta">~{{ item.amountText }} · {{ daysLeftText(item.daysLeft).toLowerCase() }}</div>
+              <div class="inv-meta">
+                {{ restockStatusText(item) }}
+                <template v-if="item.amountText"> · buy ~{{ item.amountText }}</template>
+              </div>
             </div>
-            <span v-if="item.buyBy === null" class="fc-buy__when is-red">Today</span>
-            <span v-else class="fc-buy__when">by {{ formatDay(item.buyBy) }}</span>
+            <span v-if="item.actOn === null" class="fc-buy__when is-red">Today</span>
+            <span v-else class="fc-buy__when">by {{ formatDay(item.actOn) }}</span>
           </div>
           <RouterLink to="/materials" class="fc-link d-inline-block mt-2">All materials →</RouterLink>
         </section>
       </div>
 
       <!-- ===== Next 30 days by product (folded) ===== -->
-      <button
-        type="button"
-        class="fc-details"
-        :aria-expanded="showDetails"
-        @click="showDetails = !showDetails"
-      >
+      <button type="button" class="fc-details" :aria-expanded="showDetails" @click="showDetails = !showDetails">
         <span>{{ showDetails ? '▾' : '▸' }} Next 30 days by product</span>
         <span class="fc-details__hint">For planning further ahead</span>
       </button>
@@ -573,21 +593,21 @@ const chartGrid = computed(() => {
           </div>
 
           <!-- Bar chart: dark = orders already logged, light = expected extra -->
-          <svg
-            class="fc-chart"
-            :viewBox="`0 0 ${CHART_W} ${CHART_H}`"
-            role="img"
-            :aria-label="`Expected sales of ${chartItem.name} by ${chartView}`"
-          >
+          <svg class="fc-chart" :viewBox="`0 0 ${CHART_W} ${CHART_H}`" role="img"
+            :aria-label="`Expected sales of ${chartItem.name} by ${chartView}`">
             <g v-for="line in chartGrid" :key="line.y">
               <line class="fc-chart__grid" :x1="CHART_LEFT" :x2="CHART_W" :y1="line.y" :y2="line.y" />
-              <text class="fc-chart__label" :x="CHART_LEFT - 6" :y="line.y + 4" text-anchor="end">{{ line.value }}</text>
+              <text class="fc-chart__label" :x="CHART_LEFT - 6" :y="line.y + 4" text-anchor="end">{{ line.value
+                }}</text>
             </g>
             <g v-for="(bar, i) in chartShapes" :key="i">
               <rect class="fc-chart__extra" :x="bar.x" :y="bar.extraY" :width="bar.width" :height="bar.extraH" rx="2" />
-              <rect class="fc-chart__orders" :x="bar.x" :y="bar.ordersY" :width="bar.width" :height="bar.ordersH" rx="2" />
-              <text v-if="bar.top" class="fc-chart__top" :x="bar.centre" :y="bar.extraY - 6" text-anchor="middle">{{ bar.top }}</text>
-              <text v-if="bar.label" class="fc-chart__label" :x="bar.centre" :y="CHART_H - 10" text-anchor="middle">{{ bar.label }}</text>
+              <rect class="fc-chart__orders" :x="bar.x" :y="bar.ordersY" :width="bar.width" :height="bar.ordersH"
+                rx="2" />
+              <text v-if="bar.top" class="fc-chart__top" :x="bar.centre" :y="bar.extraY - 6" text-anchor="middle">{{
+                bar.top }}</text>
+              <text v-if="bar.label" class="fc-chart__label" :x="bar.centre" :y="CHART_H - 10" text-anchor="middle">{{
+                bar.label }}</text>
             </g>
           </svg>
 
@@ -603,10 +623,12 @@ const chartGrid = computed(() => {
               </thead>
               <tbody>
                 <template v-for="item in productItems" :key="item.id">
-                  <tr class="is-clickable" :class="{ 'is-selected': chartItem.id === item.id }" @click="selectProduct(item.id)">
+                  <tr class="is-clickable" :class="{ 'is-selected': chartItem.id === item.id }"
+                    @click="selectProduct(item.id)">
                     <td>
                       <span class="fc-caret">
-                        <template v-if="variantItems(item.id).length > 0">{{ openProducts.includes(item.id) ? '▾' : '▸' }}</template>
+                        <template v-if="variantItems(item.id).length > 0">{{ openProducts.includes(item.id) ? '▾' : '▸'
+                          }}</template>
                       </span>
                       <strong>{{ item.name }}</strong>
                     </td>
@@ -627,6 +649,40 @@ const chartGrid = computed(() => {
             </table>
           </div>
         </template>
+      </section>
+
+      <button type="button" class="fc-details mt-3" :aria-expanded="showRestock" @click="showRestock = !showRestock">
+        <span>{{ showRestock ? '▾' : '▸' }} Restock plan: next 30 days</span>
+        <span class="fc-details__hint">{{ restockPlan.length }} material(s) going low or running out</span>
+      </button>
+
+      <section v-if="showRestock" class="sk-card mt-3">
+        <p v-if="restockPlan.length === 0" class="inv-meta">
+          Nothing is expected to go low or run out in the next 30 days.
+        </p>
+
+        <div v-for="group in restockGroups" :key="group.label" class="mb-3">
+          <h3 class="fc-panel-title mb-2">{{ group.label }}</h3>
+          <div v-for="m in group.rows" :key="m.id" class="fc-buy">
+            <div>
+              <strong>{{ m.name }}</strong>
+              <div class="inv-meta">
+                {{ m.quantity }} {{ m.unit }} in stock
+                <template v-if="m.alreadyLow"> · already at or below the low-stock level</template>
+                <template v-else-if="m.runsLowOn"> · low by {{ formatDay(m.runsLowOn) }}</template>
+                <template v-if="m.runsOutOn"> · runs out {{ formatDay(m.runsOutOn) }}</template>
+              </div>
+            </div>
+            <span class="fc-buy__when" :class="{ 'is-red': m.alreadyLow || m.actIn <= 7 }">
+              {{ m.amountText ? 'Buy ~' + m.amountText : '—' }}
+            </span>
+          </div>
+        </div>
+
+        <p class="fc-note">
+          Based on your usual weekday pattern, so it's an estimate. "Buy" is the amount that
+          covers the full 30 days and keeps you above the low-stock level.
+        </p>
       </section>
 
     </template>

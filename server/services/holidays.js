@@ -31,7 +31,7 @@
 
 import axios from "axios";
 
-const DATASET_ID = "d_149b61ad0a22f61c09dc80f2df5bbec8";
+const DATASET_ID = "d_8ef23381f9417e4d4254ee8b4dcdb176";
 const HOLIDAYS_URL = "https://data.gov.sg/api/action/datastore_search?resource_id=" + DATASET_ID;
 
 let savedDates = null;

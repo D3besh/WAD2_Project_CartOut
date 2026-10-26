@@ -86,6 +86,52 @@ export function daysLeftText(daysLeft) {
   return daysLeft + ' days left';
 }
 
+// Materials that are already low, or go low / run out within the 30 days. Soonest first.
+//   actIn = days until you should act (0 = already low)
+//   amountText = how much to buy, e.g. "31 kg"
+export function buildRestockPlan(forecast) {
+  if (!forecast || !forecast.materials) {
+    return [];
+  }
+
+  let rows = [];
+  for (let m of forecast.materials) {
+    let alreadyLow = m.lowStockThreshold != null && m.quantity <= m.lowStockThreshold;
+    let lowIn = m.runsLowOn ? daysBetween(forecast.today, m.runsLowOn) : null;
+    let outIn = m.runsOutOn ? daysBetween(forecast.today, m.runsOutOn) : null;
+    if (!alreadyLow && lowIn === null && outIn === null) {
+      continue; // fine for 30 days
+    }
+
+    rows.push({
+      ...m,
+      alreadyLow: alreadyLow,
+      lowIn: lowIn,
+      outIn: outIn,
+      actIn: alreadyLow ? 0 : (lowIn !== null ? lowIn : outIn),
+      actOn: alreadyLow ? null : (m.runsLowOn || m.runsOutOn), // null = today
+      amountText: m.suggestedBuy > 0 ? formatAmount(m.suggestedBuy, m.unit) : null,
+    });
+  }
+  return rows.sort((a, b) => a.actIn - b.actIn);
+}
+
+// The same list, limited to the next `days` days
+export function restockWithin(forecast, days) {
+  return buildRestockPlan(forecast).filter((r) => r.actIn <= days);
+}
+
+// "Low now", "Low in 3 days", "Runs out in 5 days"
+export function restockStatusText(r) {
+  if (r.alreadyLow) return 'Low now';
+  if (r.lowIn !== null) {
+    if (r.lowIn <= 0) return 'Low today';
+    return 'Low in ' + r.lowIn + (r.lowIn === 1 ? ' day' : ' days');
+  }
+  if (r.outIn <= 0) return 'Runs out today';
+  return 'Runs out in ' + r.outIn + (r.outIn === 1 ? ' day' : ' days');
+}
+
 // The forecast for one product row on one day.
 //   items   = forecast.products.items (from the server)
 //   rowId   = "<productId>" (whole product), "<productId>:regular" or "<productId>:<variantId>"

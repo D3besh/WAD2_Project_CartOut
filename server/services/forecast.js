@@ -37,6 +37,7 @@ const HISTORY_DAYS = 56;  // learn from the last 8 weeks
 const TEST_DAYS = 28;     // check accuracy on the last 4 weeks
 const FORECAST_DAYS = 30; // look 30 days ahead (prof: restocking takes less than a month)
 const SPIKE_RATIO = 1.5;  // a weekday is a "spike" if it uses 1.5× the normal daily average
+const BACKTEST_LAG = 7;   // test as if each forecast was made 7 days before the day it predicts
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -141,9 +142,10 @@ export function backtest(materials, usageByDay, holidayDates, today) {
       continue; // holidays aren't normal days, so don't test on them either
     }
 
-    // Pretend it's the morning of testDay: learn only from the 8 weeks before it
-    let weightedAvg = learnWeekdayAverages(usageByDay, holidayDates, testDay, true);
-    let simpleAvg = learnWeekdayAverages(usageByDay, holidayDates, testDay, false);
+        // Pretend the forecast was made BACKTEST_LAG days before testDay: learn only from the 8 weeks before that
+    let learnEnd = addDays(testDay, -BACKTEST_LAG);
+    let weightedAvg = learnWeekdayAverages(usageByDay, holidayDates, learnEnd, true);
+    let simpleAvg = learnWeekdayAverages(usageByDay, holidayDates, learnEnd, false);
     let wd = weekdayOf(testDay);
     let used = usageByDay[testDay] || {};
 
@@ -398,7 +400,7 @@ export async function forecastMaterials(sellerId, holidayDates) {
   let pastOrders = await Order.find({
     seller: sellerId,
     status: 'completed',
-    dueAt: { $gte: startOfDay(addDays(today, -(HISTORY_DAYS + TEST_DAYS))), $lt: startOfDay(today) },
+    dueAt: { $gte: startOfDay(addDays(today, -(HISTORY_DAYS + TEST_DAYS + BACKTEST_LAG))), $lt: startOfDay(today) },
   });
 
   let upcomingOrders = await Order.find({
