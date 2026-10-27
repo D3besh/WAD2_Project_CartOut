@@ -158,11 +158,11 @@ async function loadOrders() {
   }
 }
 
-
 // ===== Dashboard settings =====
 const dashboardPeriod = ref("all");
 const showDashboardOptions = ref(false);
 const dashboardPreferenceMessage = ref("");
+const showAnalyticsDashboard = ref(true);
 
 const dashboardOptions = [
   { id: "sales", label: "Total sales" },
@@ -171,15 +171,11 @@ const dashboardOptions = [
   { id: "trend", label: "Profit trend" },
 ];
 
-const dashboardVisible = ref(
-  dashboardOptions.map((option) => option.id),
-);
+const dashboardVisible = ref(dashboardOptions.map((option) => option.id));
 
 onMounted(() => {
   try {
-    const saved = JSON.parse(
-      localStorage.getItem("cartoutDashboardCards"),
-    );
+    const saved = JSON.parse(localStorage.getItem("cartoutDashboardCards"));
 
     if (Array.isArray(saved)) {
       dashboardVisible.value = dashboardOptions
@@ -190,6 +186,29 @@ onMounted(() => {
     // Keep the default cards if browser storage is unavailable.
   }
 });
+
+onMounted(() => {
+  try {
+    const saved = localStorage.getItem("cartoutShowAnalyticsDashboard");
+
+    if (saved !== null) {
+      showAnalyticsDashboard.value = saved === "true";
+    }
+  } catch {
+    // Keep dashboard visible if browser storage is unavailable.
+  }
+});
+
+function saveAnalyticsVisibility() {
+  try {
+    localStorage.setItem(
+      "cartoutShowAnalyticsDashboard",
+      String(showAnalyticsDashboard.value),
+    );
+  } catch {
+    // Setting still applies for this visit.
+  }
+}
 
 function saveDashboardCards() {
   try {
@@ -207,9 +226,7 @@ function saveDashboardCards() {
 }
 
 function resetDashboardCards() {
-  dashboardVisible.value = dashboardOptions.map(
-    (option) => option.id,
-  );
+  dashboardVisible.value = dashboardOptions.map((option) => option.id);
 
   saveDashboardCards();
 }
@@ -245,11 +262,7 @@ function dashboardMoney(value) {
 }
 
 function validDashboardAmount(value) {
-  return (
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= 0
-  );
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 // ===== Orders used for sales and profit =====
@@ -387,55 +400,146 @@ const dashboardSummaryCards = computed(() => {
     },
   ];
 
-  return cards.filter((card) =>
-    dashboardVisible.value.includes(card.id),
-  );
+  return cards.filter((card) => dashboardVisible.value.includes(card.id));
 });
 
-// ===== Monthly profit trend =====
-const dashboardTrend = computed(() => {
-  const groups = {};
+// ===== Profit trend: weekly ranges or months =====
 
-  for (const order of dashboardCompletedOrders.value) {
-    const month = dashboardMonth(order.dueAt);
+// Read dates in Singapore time.
+function dashboardDateParts(value) {
+  if (!value) return null;
 
-    if (!month) continue;
+  const date = new Date(value);
 
-    if (!groups[month]) groups[month] = [];
+  if (!Number.isFinite(date.getTime())) return null;
 
-    groups[month].push(order);
+  const parts = new Intl.DateTimeFormat("en-SG", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  function getPart(type) {
+    return Number(parts.find((part) => part.type === type).value);
   }
 
-  return Object.keys(groups)
-    .sort()
-    .map((month) => {
-      const label = new Date(
-        `${month}-01T00:00:00+08:00`,
-      ).toLocaleDateString("en-SG", {
-        timeZone: "Asia/Singapore",
-        month: "short",
-        year: "numeric",
-      });
+  return {
+    year: getPart("year"),
+    month: getPart("month"),
+    day: getPart("day"),
+  };
+}
 
-      return {
-        month,
-        label,
-        ...calculateDashboardTotals(groups[month]),
-      };
+const dashboardTrend = computed(() => {
+  const current = dashboardDateParts(new Date());
+  const rows = [];
+  const groups = {};
+
+  const weekly = dashboardPeriod.value === "month";
+
+  // Group completed orders into the appropriate period.
+  for (const order of dashboardCompletedOrders.value) {
+    const date = dashboardDateParts(order.dueAt);
+
+    if (!date) continue;
+
+    const key = weekly
+      ? Math.floor((date.day - 1) / 7)
+      : date.year * 12 + date.month - 1;
+
+    if (!groups[key]) groups[key] = [];
+
+    groups[key].push(order);
+  }
+
+  function addRow(key, label, future, ongoing) {
+    const totals = calculateDashboardTotals(groups[key] || []);
+
+    rows.push({
+      key,
+      label,
+      future,
+      ongoing,
+      ...totals,
+
+      // Future ranges stay blank rather than showing a false $0.
+      profit: future ? null : totals.profit,
     });
+  }
+
+  if (weekly) {
+    const lastDay = new Date(
+      Date.UTC(current.year, current.month, 0),
+    ).getUTCDate();
+
+    const monthLabel = new Date(
+      Date.UTC(current.year, current.month - 1, 1),
+    ).toLocaleDateString("en-SG", {
+      timeZone: "UTC",
+      month: "short",
+    });
+
+    for (let start = 1; start <= lastDay; start += 7) {
+      const end = Math.min(start + 6, lastDay);
+      const key = Math.floor((start - 1) / 7);
+
+      addRow(
+        key,
+        `${start}–${end} ${monthLabel}`,
+        start > current.day,
+        current.day >= start && current.day <= end,
+      );
+    }
+  } else {
+    const currentMonth = current.year * 12 + current.month - 1;
+    const recordedMonths = Object.keys(groups).map(Number);
+
+    // All time has no timeline to display when no dated orders exist.
+    if (dashboardPeriod.value === "all" && recordedMonths.length === 0) {
+      return [];
+    }
+
+    const firstMonth =
+      dashboardPeriod.value === "year"
+        ? current.year * 12
+        : Math.min(...recordedMonths);
+
+    const lastMonth =
+      dashboardPeriod.value === "year"
+        ? current.year * 12 + 11
+        : Math.max(currentMonth, ...recordedMonths);
+
+    // Include intervening months so the timeline has no missing slots.
+    for (let key = firstMonth; key <= lastMonth; key++) {
+      const year = Math.floor(key / 12);
+      const monthIndex = key % 12;
+
+      const label = new Date(Date.UTC(year, monthIndex, 1)).toLocaleDateString(
+        "en-SG",
+        {
+          timeZone: "UTC",
+          month: "short",
+          year: "numeric",
+        },
+      );
+
+      addRow(key, label, key > currentMonth, key === currentMonth);
+    }
+  }
+
+  return rows;
 });
 
 const dashboardUndatedCount = computed(() => {
   return dashboardCompletedOrders.value.filter(
-    (order) => !dashboardMonth(order.dueAt),
+    (order) => !dashboardDateParts(order.dueAt),
   ).length;
 });
 
-// ===== Profit line graph =====
+// ===== Convert trend values into SVG coordinates =====
 const dashboardGraph = computed(() => {
   const rows = dashboardTrend.value;
-
-  if (rows.length === 0) return null;
 
   const amounts = rows
     .filter((row) => row.profit !== null)
@@ -443,58 +547,36 @@ const dashboardGraph = computed(() => {
 
   if (amounts.length === 0) return null;
 
-  // Include zero so the graph does not exaggerate small changes.
   const minimum = Math.min(0, ...amounts);
   const maximum = Math.max(0, ...amounts);
   const range = maximum - minimum || 1;
-
-  // Convert each month to a number to preserve gaps between months.
-  function monthNumber(month) {
-    const [year, number] = month.split("-").map(Number);
-    return year * 12 + number - 1;
-  }
-
-  const firstMonth = monthNumber(rows[0].month);
-  const lastMonth = monthNumber(rows[rows.length - 1].month);
-  const monthRange = lastMonth - firstMonth;
 
   function yPosition(value) {
     return 180 - ((value - minimum) / range) * 140;
   }
 
-  const points = rows.map((row) => ({
+  const points = rows.map((row, index) => ({
     ...row,
-    x:
-      monthRange === 0
-        ? 340
-        : 100 +
-          ((monthNumber(row.month) - firstMonth) / monthRange) * 480,
+    x: rows.length === 1 ? 340 : 100 + (index / (rows.length - 1)) * 480,
     y: row.profit === null ? null : yPosition(row.profit),
   }));
 
-  // Break the line when a month has no usable profit figure.
   let path = "";
-  let previousMonth = null;
+  let connectToPrevious = false;
 
   for (const point of points) {
-    const currentMonth = monthNumber(point.month);
-
     if (point.y === null) {
-      previousMonth = null;
+      // Do not draw through missing costs or future periods.
+      connectToPrevious = false;
       continue;
     }
 
-    const connected = previousMonth === currentMonth - 1;
-
-    path += `${connected ? "L" : "M"} ${point.x} ${point.y} `;
-    previousMonth = currentMonth;
+    path += `${connectToPrevious ? "L" : "M"} ${point.x} ${point.y} `;
+    connectToPrevious = true;
   }
 
-  const ticks = [maximum, minimum + range / 2, minimum];
-
-  // When every profit is zero, show a simple zero baseline.
   const axisValues =
-    maximum === minimum ? [0] : [...new Set(ticks)];
+    maximum === minimum ? [0] : [maximum, minimum + range / 2, minimum];
 
   return {
     points,
@@ -532,333 +614,378 @@ onMounted(loadShop);
       </button>
     </div>
 
-<!-- Dashboard -->
-<section class="my-4" aria-labelledby="dashboard-heading">
-  <div
-    class="d-flex flex-column flex-sm-row
-           justify-content-between align-items-sm-center gap-3 mb-3"
-  >
-    <h2 id="dashboard-heading" class="h4 mb-0">
-      Dashboard
-    </h2>
-
-    <div class="d-flex flex-row flex-nowrap align-items-center gap-2">
-      <button
-        type="button"
-        class="btn btn-light text-nowrap w-auto flex-shrink-0"
-        :aria-expanded="showDashboardOptions"
-        aria-controls="dashboard-options"
-        @click="showDashboardOptions = !showDashboardOptions"
+    <!-- Dashboard -->
+    <section class="my-4" aria-labelledby="dashboard-heading">
+      <div
+        class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-3"
       >
-        Customise dashboard
-      </button>
+        <h2 id="dashboard-heading" class="h4 mb-0">Dashboard</h2>
 
-      <RouterLink
-        to="/orders/new"
-        class="btn btn-primary text-nowrap"
+        <div class="d-flex flex-row flex-nowrap align-items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-light text-nowrap w-auto flex-shrink-0"
+            :aria-expanded="showDashboardOptions"
+            aria-controls="dashboard-options"
+            @click="showDashboardOptions = !showDashboardOptions"
+          >
+            Customise dashboard
+          </button>
+
+          <RouterLink to="/orders/new" class="btn btn-primary text-nowrap">
+            Log order
+          </RouterLink>
+        </div>
+      </div>
+
+      <!-- Card visibility -->
+      <div
+        v-show="showDashboardOptions"
+        id="dashboard-options"
+        class="card mb-3"
       >
-        Log order
-      </RouterLink>
-    </div>
-  </div>
+        <div class="card-body">
+          <!-- Title on the left, Reset on the top right -->
+          <div class="form-check form-switch mb-3">
+            <input
+              id="show-analytics-dashboard"
+              v-model="showAnalyticsDashboard"
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+              @change="saveAnalyticsVisibility"
+            />
 
-  <!-- Card visibility -->
-  <div
-    v-show="showDashboardOptions"
-    id="dashboard-options"
-    class="card mb-3"
-  >
-    <div class="card-body">
-      <!-- Title on the left, Reset on the top right -->
-      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
-        <h3 class="h6 mb-0">Choose visible dashboard cards</h3>
+            <label for="show-analytics-dashboard" class="form-check-label">
+              Show analytics dashboard
+            </label>
+          </div>
+          <div
+            class="d-flex justify-content-between align-items-center gap-2 mb-3"
+          >
+            <h3 class="h6 mb-0">Choose visible dashboard cards</h3>
+            <button
+              type="button"
+              class="btn btn-light btn-sm text-nowrap"
+              @click="resetDashboardCards"
+            >
+              Reset cards to default
+            </button>
+          </div>
+
+          <fieldset>
+            <!-- Screen readers still hear the group name -->
+            <legend class="visually-hidden">
+              Choose visible dashboard cards
+            </legend>
+
+            <div class="row g-2">
+              <div
+                v-for="option in dashboardOptions"
+                :key="option.id"
+                class="col-12 col-sm-6 col-lg-3"
+              >
+                <div class="form-check">
+                  <input
+                    :id="'dashboard-card-' + option.id"
+                    v-model="dashboardVisible"
+                    :value="option.id"
+                    type="checkbox"
+                    class="form-check-input"
+                    @change="saveDashboardCards"
+                  />
+
+                  <label
+                    :for="'dashboard-card-' + option.id"
+                    class="form-check-label"
+                  >
+                    {{ option.label }}
+                  </label>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <p class="small text-secondary mt-2 mb-0" role="status">
+            {{ dashboardPreferenceMessage }}
+          </p>
+        </div>
+      </div>
+
+
+      <div v-if="showAnalyticsDashboard">
+      <!-- Financial period -->
+      <div class="row mb-2">
+        <div class="col-12 col-sm-6 col-lg-4">
+          <label for="dashboard-period" class="form-label">
+            Sales and profit period
+          </label>
+
+          <select
+            id="dashboard-period"
+            v-model="dashboardPeriod"
+            class="form-select"
+            aria-describedby="dashboard-period-help"
+          >
+            <option value="all">All time</option>
+            <option value="month">This month</option>
+            <option value="year">This year</option>
+          </select>
+        </div>
+      </div>
+
+      <p id="dashboard-period-help" class="small text-secondary">
+        Outstanding orders shows the current total.
+      </p>
+
+      <!-- Loading, error and hidden states -->
+      <p v-if="ordersLoading" role="status">Loading dashboard...</p>
+
+      <div v-else-if="ordersError" class="alert alert-danger" role="alert">
+        Dashboard unavailable. {{ ordersError }}
         <button
           type="button"
-          class="btn btn-light btn-sm text-nowrap"
-          @click="resetDashboardCards"
+          class="btn btn-outline-danger btn-sm"
+          @click="loadOrders"
         >
-          Reset cards to default
+          Retry
         </button>
       </div>
 
-      <fieldset>
-        <!-- Screen readers still hear the group name -->
-        <legend class="visually-hidden">Choose visible dashboard cards</legend>
-
-        <div class="row g-2">
-          <div
-            v-for="option in dashboardOptions"
-            :key="option.id"
-            class="col-12 col-sm-6 col-lg-3"
+      <template v-else>
+        <div v-if="dashboardVisible.length === 0" class="alert alert-info">
+          All dashboard cards are hidden.
+          <button
+            type="button"
+            class="btn btn-link p-0 align-baseline"
+            @click="resetDashboardCards"
           >
-            <div class="form-check">
-              <input
-                :id="'dashboard-card-' + option.id"
-                v-model="dashboardVisible"
-                :value="option.id"
-                type="checkbox"
-                class="form-check-input"
-                @change="saveDashboardCards"
-              />
+            Restore default cards
+          </button>
+        </div>
 
-              <label
-                :for="'dashboard-card-' + option.id"
-                class="form-check-label"
-              >
-                {{ option.label }}
-              </label>
-            </div>
+        <!-- Summary cards -->
+        <div class="row g-3">
+          <div
+            v-for="card in dashboardSummaryCards"
+            :key="card.id"
+            class="col-12 col-md-6 col-xl-4"
+          >
+            <article class="card h-100">
+              <div class="card-body">
+                <h3 class="h6">{{ card.title }}</h3>
+                <p class="fs-3 fw-bold my-3 text-break">
+                  {{ card.value }}
+                </p>
+                <p class="small text-secondary mb-0">{{ card.note }}</p>
+
+                <template v-if="card.id === 'profit'">
+                  <p class="small mt-2 mb-0">
+                    {{ dashboardTotals.included }} of
+                    {{ dashboardTotals.total }} completed orders included.
+                  </p>
+
+                  <p
+                    v-if="dashboardTotals.excluded > 0"
+                    class="small mt-2 mb-0"
+                  >
+                    {{ dashboardTotals.excluded }} order(s) excluded because
+                    cost or price details are unavailable.
+                    <RouterLink to="/products">
+                      Review product costs </RouterLink
+                    >.
+                  </p>
+                </template>
+              </div>
+            </article>
           </div>
         </div>
-      </fieldset>
 
-      <p class="small text-secondary mt-2 mb-0" role="status">
-        {{ dashboardPreferenceMessage }}
-      </p>
-    </div>
-  </div>
-
-  <!-- Financial period -->
-  <div class="row mb-2">
-    <div class="col-12 col-sm-6 col-lg-4">
-      <label for="dashboard-period" class="form-label">
-        Sales and profit period
-      </label>
-
-      <select
-        id="dashboard-period"
-        v-model="dashboardPeriod"
-        class="form-select"
-        aria-describedby="dashboard-period-help"
-      >
-        <option value="all">All time</option>
-        <option value="month">This month</option>
-        <option value="year">This year</option>
-      </select>
-    </div>
-  </div>
-
-  <p id="dashboard-period-help" class="small text-secondary">
-    Outstanding orders shows the current total.
-  </p>
-
-  <!-- Loading, error and hidden states -->
-  <p v-if="ordersLoading" role="status">Loading dashboard...</p>
-
-  <div v-else-if="ordersError" class="alert alert-danger" role="alert">
-    Dashboard unavailable. {{ ordersError }}
-    <button
-      type="button"
-      class="btn btn-outline-danger btn-sm"
-      @click="loadOrders"
-    >
-      Retry
-    </button>
-  </div>
-
-  <template v-else>
-    <div v-if="dashboardVisible.length === 0" class="alert alert-info">
-      All dashboard cards are hidden.
-      <button
-        type="button"
-        class="btn btn-link p-0 align-baseline"
-        @click="resetDashboardCards"
-      >
-        Restore default cards
-      </button>
-    </div>
-
-    <!-- Summary cards -->
-    <div class="row g-3">
-      <div
-        v-for="card in dashboardSummaryCards"
-        :key="card.id"
-        class="col-12 col-md-6 col-xl-4"
-      >
-        <article class="card h-100">
+        <!-- Profit line graph -->
+        <article v-if="dashboardVisible.includes('trend')" class="card mt-3">
           <div class="card-body">
-            <h3 class="h6">{{ card.title }}</h3>
-            <p class="fs-3 fw-bold my-3 text-break">
-              {{ card.value }}
+            <h3 class="h5">Estimated profit over time</h3>
+
+            <p class="small text-secondary">
+              {{
+                dashboardPeriod === "month"
+                  ? "Profit within each weekly date range."
+                  : "Profit within each month."
+              }}
+              Completed orders grouped by scheduled fulfilment date, using
+              current product costs.
             </p>
-            <p class="small text-secondary mb-0">{{ card.note }}</p>
 
-            <template v-if="card.id === 'profit'">
-              <p class="small mt-2 mb-0">
-                {{ dashboardTotals.included }} of
-                {{ dashboardTotals.total }} completed orders included.
+            <p v-if="dashboardTrend.length === 0" class="text-secondary">
+              No dated completed orders in this period.
+            </p>
+
+            <template v-else>
+              <p v-if="!dashboardGraph" class="text-secondary">
+                No profit figures are available for elapsed ranges. Check the
+                cost coverage in the figures below.
               </p>
 
-              <p
-                v-if="dashboardTotals.excluded > 0"
-                class="small mt-2 mb-0"
-              >
-                {{ dashboardTotals.excluded }} order(s) excluded because
-                cost or price details are unavailable.
-                <RouterLink to="/products">
-                  Review product costs
-                </RouterLink>.
+              <div v-else class="overflow-auto">
+                <svg
+                  viewBox="0 0 640 230"
+                  class="profit-line-chart"
+                  role="img"
+                  aria-labelledby="profit-chart-title profit-chart-description"
+                >
+                  <title id="profit-chart-title">
+                    Estimated
+                    {{ dashboardPeriod === "month" ? "weekly" : "monthly" }}
+                    gross profit in Singapore dollars
+                  </title>
+
+                  <desc id="profit-chart-description">
+                    Exact values and cost coverage are available below. Future
+                    ranges are blank. Missing profit figures break the line.
+                    Empty elapsed ranges show zero.
+                  </desc>
+
+                  <!-- Grid and currency labels -->
+                  <g v-for="tick in dashboardGraph.ticks" :key="tick.value">
+                    <line
+                      x1="100"
+                      x2="580"
+                      :y1="tick.y"
+                      :y2="tick.y"
+                      class="profit-chart-grid"
+                    />
+
+                    <text
+                      x="90"
+                      :y="tick.y + 4"
+                      text-anchor="end"
+                      class="profit-chart-label"
+                    >
+                      {{ dashboardMoney(tick.value) }}
+                    </text>
+                  </g>
+
+                  <!-- Zero baseline -->
+                  <line
+                    x1="100"
+                    x2="580"
+                    :y1="dashboardGraph.zeroY"
+                    :y2="dashboardGraph.zeroY"
+                    class="profit-chart-zero"
+                  />
+
+                  <!-- Profit line -->
+                  <path :d="dashboardGraph.path" class="profit-chart-line" />
+
+                  <!-- Points and date labels -->
+                  <g
+                    v-for="(point, index) in dashboardGraph.points"
+                    :key="point.key"
+                  >
+                    <circle
+                      v-if="point.y !== null"
+                      :cx="point.x"
+                      :cy="point.y"
+                      r="5"
+                      class="profit-chart-point"
+                    >
+                      <title>
+                        {{ point.label }}
+                        {{ point.ongoing ? "(ongoing)" : "" }}:
+                        {{ dashboardMoney(point.profit) }}.
+                        {{ point.included }} of {{ point.total }}
+                        orders included.
+                      </title>
+                    </circle>
+
+                    <text
+                      v-if="
+                        dashboardPeriod === 'month' ||
+                        index === 0 ||
+                        index === dashboardGraph.points.length - 1 ||
+                        index % Math.ceil(dashboardGraph.points.length / 5) ===
+                          0
+                      "
+                      :x="point.x"
+                      y="210"
+                      text-anchor="middle"
+                      class="profit-chart-label"
+                    >
+                      {{ point.label }}{{ point.ongoing ? "*" : "" }}
+                    </text>
+                  </g>
+                </svg>
+              </div>
+
+              <p class="small text-secondary mt-2">
+                * Ongoing range. Future ranges are blank. Ranges with no
+                completed orders show zero once they begin. Missing costs may
+                make figures partial or unavailable.
               </p>
+
+              <!-- Accessible exact figures -->
+              <details class="mt-2">
+                <summary class="small">
+                  {{
+                    dashboardPeriod === "month"
+                      ? "View weekly figures"
+                      : "View monthly figures"
+                  }}
+                </summary>
+
+                <div class="table-responsive mt-2">
+                  <table class="table align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th scope="col">Period</th>
+                        <th scope="col">Estimated profit</th>
+                        <th scope="col">Orders included</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      <tr v-for="row in dashboardTrend" :key="row.key">
+                        <th scope="row">
+                          {{ row.label }}
+                          <span v-if="row.ongoing" class="small fw-normal">
+                            (ongoing)
+                          </span>
+                        </th>
+
+                        <td>
+                          <template v-if="row.future"> Not started </template>
+
+                          <template v-else>
+                            {{ dashboardMoney(row.profit) }}
+                            <span v-if="row.excluded && row.included">
+                              · partial
+                            </span>
+                          </template>
+                        </td>
+
+                        <td>
+                          <span v-if="row.future">—</span>
+                          <span v-else>
+                            {{ row.included }} / {{ row.total }}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </template>
+
+            <p v-if="dashboardUndatedCount > 0" class="small mt-2 mb-0">
+              {{ dashboardUndatedCount }} order(s) without valid fulfilment
+              dates are excluded.
+            </p>
           </div>
         </article>
-      </div>
+      </template>
     </div>
-
-<!-- Profit line graph -->
-<article
-  v-if="dashboardVisible.includes('trend')"
-  class="card mt-3"
->
-  <div class="card-body">
-    <h3 class="h5">Estimated profit over time</h3>
-
-    <p class="small text-secondary">
-      Monthly profit from completed orders, grouped by scheduled
-      fulfilment date. Based on current product costs.
-    </p>
-
-    <p v-if="dashboardTrend.length === 0" class="text-secondary">
-      No dated completed orders in this period.
-    </p>
-
-    <p v-else-if="!dashboardGraph" class="text-secondary">
-      Add the missing product costs to display your profit graph.
-    </p>
-
-    <template v-else>
-      <div class="overflow-auto">
-        <svg
-          viewBox="0 0 640 230"
-          class="profit-line-chart"
-          role="img"
-          aria-labelledby="profit-chart-title profit-chart-description"
-        >
-          <title id="profit-chart-title">
-            Estimated monthly gross profit in Singapore dollars
-          </title>
-
-          <desc id="profit-chart-description">
-            Monthly values appear in the table below.
-            Gaps indicate months without a usable profit figure.
-          </desc>
-
-          <!-- Horizontal grid and currency labels -->
-          <g v-for="tick in dashboardGraph.ticks" :key="tick.value">
-            <line
-              x1="100"
-              x2="580"
-              :y1="tick.y"
-              :y2="tick.y"
-              class="profit-chart-grid"
-            />
-
-            <text
-              x="90"
-              :y="tick.y + 4"
-              text-anchor="end"
-              class="profit-chart-label"
-            >
-              {{ dashboardMoney(tick.value) }}
-            </text>
-          </g>
-
-          <!-- Zero baseline -->
-          <line
-            x1="100"
-            x2="580"
-            :y1="dashboardGraph.zeroY"
-            :y2="dashboardGraph.zeroY"
-            class="profit-chart-zero"
-          />
-
-          <!-- Profit line -->
-          <path
-            :d="dashboardGraph.path"
-            class="profit-chart-line"
-          />
-
-          <!-- Points and month labels -->
-          <g
-            v-for="(point, index) in dashboardGraph.points"
-            :key="point.month"
-          >
-            <circle
-              v-if="point.y !== null"
-              :cx="point.x"
-              :cy="point.y"
-              r="5"
-              class="profit-chart-point"
-            >
-              <title>
-                {{ point.label }}:
-                {{ dashboardMoney(point.profit) }}.
-                {{ point.included }} of {{ point.total }} orders included.
-              </title>
-            </circle>
-
-            <!-- Limit labels to prevent crowding on long timelines. -->
-            <text
-              v-if="
-                index === 0 ||
-                index === dashboardGraph.points.length - 1 ||
-                index % Math.ceil(dashboardGraph.points.length / 5) === 0
-              "
-              :x="point.x"
-              y="210"
-              text-anchor="middle"
-              class="profit-chart-label"
-            >
-              {{ point.label }}
-            </text>
-          </g>
-        </svg>
-      </div>
-
-      <p v-if="dashboardTrend.length === 1" class="small text-secondary">
-        One month is available. A line appears when consecutive months
-        have profit figures.
-      </p>
-
-      <!-- Exact figures remain accessible without hovering. -->
-      <details class="mt-2">
-        <summary class="small">View monthly figures</summary>
-
-        <div class="table-responsive mt-2">
-          <table class="table align-middle mb-0">
-            <thead>
-              <tr>
-                <th scope="col">Month</th>
-                <th scope="col">Estimated profit</th>
-                <th scope="col">Orders included</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr v-for="row in dashboardTrend" :key="row.month">
-                <th scope="row">{{ row.label }}</th>
-                <td>
-                  {{ dashboardMoney(row.profit) }}
-                  <span v-if="row.excluded && row.included">
-                    · partial
-                  </span>
-                </td>
-                <td>{{ row.included }} / {{ row.total }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </template>
-
-    <p v-if="dashboardUndatedCount > 0" class="small mt-2 mb-0">
-      {{ dashboardUndatedCount }} order(s) without valid fulfilment
-      dates are excluded.
-    </p>
-  </div>
-</article>
-  </template>
-</section>
+    </section>
+    
 
     <!-- Today's orders -->
     <div class="card mt-3 mb-3">
@@ -899,8 +1026,6 @@ onMounted(loadShop);
         <p v-else class="text-secondary">No outstanding orders due today.</p>
 
         <div class="d-flex gap-2 mt-3">
-
-
           <RouterLink
             v-if="!ordersLoading && !ordersError && todaysOrders.length"
             to="/orders"
@@ -1024,7 +1149,6 @@ onMounted(loadShop);
         </div>
       </div>
     </div>
-
   </section>
 </template>
 
