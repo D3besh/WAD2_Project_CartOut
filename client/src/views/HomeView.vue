@@ -891,7 +891,7 @@ onMounted(loadShop);
                     >
                       <title>
                         {{ point.label }}
-                        {{ point.ongoing ? "(ongoing)" : "" }}:
+                        {{ point.ongoing ? "(current)" : "" }}:
                         {{ dashboardMoney(point.profit) }}.
                         {{ point.included }} of {{ point.total }}
                         orders included.
@@ -948,7 +948,7 @@ onMounted(loadShop);
                         <th scope="row">
                           {{ row.label }}
                           <span v-if="row.ongoing" class="small fw-normal">
-                            (ongoing)
+                            (current)
                           </span>
                         </th>
 
