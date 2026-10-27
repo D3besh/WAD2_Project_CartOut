@@ -21,6 +21,7 @@ function newItem() {
 const emptyForm = () => ({
   customerName: '',
   customerContact: '',
+  customerEmail: '',
   platform: '',
   items: [newItem()],
   price: null,
@@ -434,6 +435,14 @@ const autoFillForm = async () => {
               <option value="tiktok">TikTok</option>
               <option value="other">Other</option>
             </select>
+          </div>
+          <div class="col-12">
+            <label for="customerEmail" class="form-label">Email (optional)</label>
+            <input id="customerEmail" v-model="form.customerEmail" type="email" class="form-control"
+              placeholder="customer@example.com" aria-describedby="customerEmailHelp" />
+            <div id="customerEmailHelp" class="form-text">
+              If you add an email, the customer gets an update automatically each time the order stage changes.
+            </div>
           </div>
         </div>
       </fieldset>

@@ -76,7 +76,7 @@ connectDB(MONGODB_URI)
     );
     server.keepAliveTimeout = 65000;
     server.headersTimeout = 66000;
-    checkEmailLogin(); // ADD
+    checkEmailLogin();
   })
   .catch((err) => {
     console.error('Failed to start:', err);
