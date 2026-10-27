@@ -6,6 +6,7 @@ import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkEmailLogin } from './services/email.js';
 
 import { connectDB } from './config/db.js';
 import authRoutes from './routes/auth.js';
@@ -75,6 +76,7 @@ connectDB(MONGODB_URI)
     );
     server.keepAliveTimeout = 65000;
     server.headersTimeout = 66000;
+    checkEmailLogin(); // ADD
   })
   .catch((err) => {
     console.error('Failed to start:', err);

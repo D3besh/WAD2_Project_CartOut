@@ -23,6 +23,7 @@ const orderSchema = new mongoose.Schema(
 
     customerName: { type: String, required: true, trim: true },
     customerContact: { type: String, trim: true },
+    customerEmail: { type: String, trim: true, lowercase: true },
     platform: { type: String, enum: ['whatsapp', 'instagram', 'telegram', 'tiktok', 'other'] },
 
     items: { type: [orderItemSchema], validate: (v) => v.length > 0 },
