@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import MaterialCard from '../components/MaterialCard.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
+import { formatDay, restockWithin, restockStatusText } from '../utils/forecast.js';
 
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
@@ -39,9 +40,11 @@ const restockError = ref('');
 // Shopping list pop-up
 const showShoppingList = ref(false);
 
-// Forecast: which materials will run low in the next 30 days (from the server)
+// Forecast: which materials will go low or run out soon (from the server)
 const forecast = ref(null);       // null = not loaded yet
-const showAllForecast = ref(false); // false = only show the 3 most urgent
+
+const URGENT_DAYS = 7;   // "Restock soon" only shows materials that go low / run out within 7 days
+const MAX_SHOWN = 3;     // and at most 3 of them (the rest are on the Forecast page)
 
 // =====================================================
 // 2. LOAD MATERIALS FROM THE SERVER
@@ -130,23 +133,28 @@ const visibleMaterials = computed(() => {
   return list;
 });
 
-// Materials the forecast says will run low or run out in the next 30 days,
-// soonest first
-const forecastAlerts = computed(() => {
-  if (forecast.value === null) {
-    return [];
-  }
-  let list = forecast.value.materials.filter((f) => f.runsLowOn !== null || f.runsOutOn !== null);
-  return list.sort((a, b) => (a.runsLowOn || a.runsOutOn).localeCompare(b.runsLowOn || b.runsOutOn));
+// Materials that will go low or run out within the next 7 days, soonest first.
+// Ones that are ALREADY low are left out here: the "running low" banner above already shows them.
+const restockSoon = computed(() => {
+  return restockWithin(forecast.value, URGENT_DAYS).filter((r) => !r.alreadyLow);
 });
 
-// The forecast alerts to show in the banner: the first 3, or all of them after "Show more"
-const visibleForecastAlerts = computed(() => {
-  if (showAllForecast.value) {
-    return forecastAlerts.value;
-  }
-  return forecastAlerts.value.slice(0, 3);
+// Only the 3 most urgent go in the banner
+const visibleRestock = computed(() => {
+  return restockSoon.value.slice(0, MAX_SHOWN);
 });
+
+// How long a material's bar is: days left out of 7 (a sliver is always visible)
+function barPercent(daysLeft) {
+  let percent = Math.round((daysLeft / URGENT_DAYS) * 100);
+  return Math.max(4, Math.min(100, percent));
+}
+
+// Red = 3 days or less, amber = later in the week
+function barColour(daysLeft) {
+  if (daysLeft <= 3) return 'is-red';
+  return 'is-amber';
+}
 
 // The forecast for one material (used inside each card), or null
 function forecastFor(materialId) {
@@ -171,12 +179,6 @@ function stockPercent(m) {
   }
   let percent = Math.round((m.quantity / (m.lowStockThreshold * 3)) * 100);
   return Math.max(4, Math.min(100, percent)); // keep a sliver visible, never over 100
-}
-
-// "2026-10-18" → "Sun, 18 Oct"
-function formatDay(key) {
-  let date = new Date(key + 'T00:00:00');
-  return date.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 // =====================================================
@@ -319,48 +321,31 @@ async function saveRestock() {
       </button>
     </div>
 
-    <!-- ===== Forecast: materials that will run low in the next 30 days ===== -->
-    <div v-if="forecastAlerts.length > 0" class="inv-banner inv-banner--info mb-3">
-      <div>
-        <p class="inv-banner__title">📅 Coming up in the next {{ forecast.forecastDays }} days</p>
-        <ul>
-          <li v-for="f in visibleForecastAlerts" :key="f.id">
-            <strong>{{ f.name }}</strong>
-            <span v-if="f.runsLowOn"> is likely to drop below {{ f.lowStockThreshold }} {{ f.unit }} on <strong>{{ formatDay(f.runsLowOn) }}</strong></span>
-            <span v-if="f.runsLowOn && f.runsOutOn"> and</span>
-            <span v-if="f.runsOutOn"> may run out by <strong>{{ formatDay(f.runsOutOn) }}</strong></span>.
-            <span v-if="f.isSpike" class="inv-hint">
-              {{ f.busiestDay }}s are your busiest day (about {{ f.spikeRatio }}× a normal day).
-            </span>
-            <span class="inv-hint">Buy about {{ f.suggestedBuy }} {{ f.unit }} to last {{ forecast.forecastDays }} days.</span>
-          </li>
-        </ul>
+    <!-- ===== Restock soon: materials that go low / run out within 7 days (max 3) ===== -->
+    <section v-if="restockSoon.length > 0" class="fc-restock mb-4">
+      <h2 class="fc-restock__title">📅 Restock soon</h2>
 
-        <!-- Only when there are more than 3 -->
-        <button
-          v-if="forecastAlerts.length > 3"
-          type="button"
-          class="btn btn-link btn-sm inv-more"
-          @click="showAllForecast = !showAllForecast"
-        >
-          {{ showAllForecast ? 'Show less' : 'Show ' + (forecastAlerts.length - 3) + ' more' }}
-        </button>
+      <div v-for="item in visibleRestock" :key="item.id" class="fc-row">
+        <span class="fc-row__name">{{ item.name }}</span>
+        <div class="fc-bar" aria-hidden="true">
+          <span :class="barColour(item.actIn)" :style="{ width: barPercent(item.actIn) + '%' }"></span>
+        </div>
+        <span class="fc-days" :class="barColour(item.actIn)">{{ restockStatusText(item) }}</span>
+        <div class="fc-action">
+          <template v-if="item.amountText">Buy <strong>~{{ item.amountText }}</strong></template>
+          <template v-else>Check stock</template>
+          <strong v-if="item.actOn === null"> today</strong>
+          <template v-else> by <strong>{{ formatDay(item.actOn) }}</strong></template>
+        </div>
       </div>
-    </div>
 
-    <!-- How accurate the forecast has been (backtest on the last 4 weeks) -->
-    <p v-if="forecast !== null && forecast.accuracy !== null" class="inv-accuracy mb-3">
-      🎯 <strong>Forecast accuracy:</strong>
-      tested on the last {{ forecast.accuracy.testDays / 7 }} weeks, it was usually within
-      <strong>{{ forecast.accuracy.errorPercent }}%</strong> of what you actually used each day.
-      <span v-if="forecast.accuracy.improvementPercent > 0">
-        That's {{ forecast.accuracy.improvementPercent }}% more accurate than a simple average
-        ({{ forecast.accuracy.simpleErrorPercent }}% off).
-      </span>
-      <span v-else>
-        (A simple average was {{ forecast.accuracy.simpleErrorPercent }}% off.)
-      </span>
-    </p>
+      <div class="fc-foot">
+        <span>Based on your last 8 weeks of orders and the orders already logged.</span>
+        <RouterLink to="/forecast" class="fc-link">
+          <template v-if="restockSoon.length > MAX_SHOWN">+ {{ restockSoon.length - MAX_SHOWN }} more · </template>See full forecast →
+        </RouterLink>
+      </div>
+    </section>
 
     <!-- No order history yet = nothing to learn from -->
     <p v-if="forecast !== null && forecast.historyOrderCount === 0" class="inv-meta mb-3">
@@ -378,26 +363,16 @@ async function saveRestock() {
           <span v-if="lowMaterials.length > 0" class="count">{{ lowMaterials.length }}</span>
         </button>
       </div>
-      <input
-        id="material-search"
-        v-model="search"
-        class="form-control inv-search"
-        placeholder="Search materials"
-        aria-label="Search materials"
-      />
+      <input id="material-search" v-model="search" class="form-control inv-search" placeholder="Search materials"
+        aria-label="Search materials" />
     </div>
 
     <!-- ===== Material cards ===== -->
     <TransitionGroup v-if="visibleMaterials.length > 0" name="list" tag="div" class="sk-grid">
 
       <!-- Prop: :material.  Events: @restock and @edit (the card sends the material back). -->
-      <MaterialCard
-        v-for="m in visibleMaterials"
-        :key="m.id"
-        :material="m"
-        @restock="markRestocked"
-        @edit="openEditForm"
-      >
+      <MaterialCard v-for="m in visibleMaterials" :key="m.id" :material="m" @restock="markRestocked"
+        @edit="openEditForm">
         <!-- Everything in here goes into the card's <slot> -->
 
         <!-- Quantity materials show a number -->
@@ -410,11 +385,7 @@ async function saveRestock() {
             Low below {{ m.lowStockThreshold }} {{ m.unit }}
           </p>
           <!-- From the forecast -->
-          <span
-            v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn"
-            class="inv-forecast"
-            :title="forecastFor(m.id).accuracy ? 'Forecast is usually within ' + forecastFor(m.id).accuracy.errorPercent + '% for this material' : ''"
-          >
+          <span v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="inv-forecast">
             📅 Runs low {{ formatDay(forecastFor(m.id).runsLowOn) }}
           </span>
         </template>
@@ -466,20 +437,12 @@ async function saveRestock() {
 
             <span class="form-label d-block">How do you track it?</span>
             <div class="inv-segment mb-3">
-              <button
-                type="button"
-                class="chip"
-                :class="{ 'is-active': form.trackingMode === 'quantity' }"
-                @click="form.trackingMode = 'quantity'"
-              >
+              <button type="button" class="chip" :class="{ 'is-active': form.trackingMode === 'quantity' }"
+                @click="form.trackingMode = 'quantity'">
                 Exact amount
               </button>
-              <button
-                type="button"
-                class="chip"
-                :class="{ 'is-active': form.trackingMode === 'level' }"
-                @click="form.trackingMode = 'level'"
-              >
+              <button type="button" class="chip" :class="{ 'is-active': form.trackingMode === 'level' }"
+                @click="form.trackingMode = 'level'">
                 Low / Medium / High
               </button>
             </div>
@@ -492,7 +455,8 @@ async function saveRestock() {
               </div>
               <div class="col-sm-6">
                 <label for="material-threshold" class="form-label">Warn me below (optional)</label>
-                <input id="material-threshold" v-model.number="form.lowStockThreshold" type="number" min="0" class="form-control" />
+                <input id="material-threshold" v-model.number="form.lowStockThreshold" type="number" min="0"
+                  class="form-control" />
               </div>
             </div>
 
@@ -508,12 +472,8 @@ async function saveRestock() {
           </div>
 
           <div class="modal-footer">
-            <button
-              v-if="editingId !== null"
-              type="button"
-              class="btn btn-outline-danger btn-sm me-auto"
-              @click="deleteMaterial"
-            >
+            <button v-if="editingId !== null" type="button" class="btn btn-outline-danger btn-sm me-auto"
+              @click="deleteMaterial">
               Delete
             </button>
             <button type="button" class="btn btn-light" @click="showForm = false">Cancel</button>
@@ -536,7 +496,9 @@ async function saveRestock() {
 
           <div class="modal-body">
             <div v-if="restockError" class="inv-banner inv-banner--danger mb-3">{{ restockError }}</div>
-            <p class="inv-meta mb-3">You have <strong>{{ restockTarget.quantity }} {{ restockTarget.unit }}</strong> now.</p>
+            <p class="inv-meta mb-3">You have <strong>{{ restockTarget.quantity }} {{ restockTarget.unit }}</strong>
+              now.
+            </p>
             <label for="restock-amount" class="form-label">How much did you buy?</label>
             <div class="input-group">
               <input id="restock-amount" v-model.number="restockAmount" type="number" min="0" class="form-control" />
