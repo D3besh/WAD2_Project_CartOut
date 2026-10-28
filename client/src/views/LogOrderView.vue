@@ -296,7 +296,12 @@ const autoFillForm = async () => {
       missingFields.value.push('Fulfilment Method');
     }
 
-    // Delivery address
+    if (data.customerEmail) {
+      form.customerEmail = data.customerEmail;
+      filledFields.value.push('Customer Email');
+    } else {
+      missingFields.value.push('Customer Email');
+    }
 
     // Delivery address
     if (data.fulfilmentMethod === 'delivery') {

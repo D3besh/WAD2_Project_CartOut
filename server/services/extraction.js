@@ -40,6 +40,7 @@ Return ONLY JSON in this shape:
 {
   "customerName": string | null,
   "customerContact": string | null,
+  "customerEmail": string | null,
   "platform": ${PLATFORMS.map((p) => `"${p}"`).join(" | ")} | null,
   "items": [{ "name": string, "variant": string | null, "quantity": integer | null, "notes": string | null }],
   "fulfilmentMethod": ${FULFILMENT_METHODS.map((m) => `"${m}"`).join(" | ")} | null,
@@ -51,6 +52,8 @@ Return ONLY JSON in this shape:
 }
 Rules: use null when something is not stated and never invent values.
 Do not guess prices. Convert number words to integers ("a dozen" = 12).
+Put an email address in "customerEmail" only, never in "customerContact". 
+Use null if no email is stated. Copy it exactly as written, never guess or complete one.
 Match variants only when the customer explicitly states one. Never invent a variant.
 If the customer explicitly asks for the regular, normal, plain or original version,
 set "variant" to "Regular". If they say nothing about the version, use null.
@@ -256,6 +259,7 @@ function combineDuplicateItems(items) {
 
 // module level, above parseOrder
 const REGULAR_WORDS = new Set(["regular", "plain", "original", "normal", "standard", "default"]);
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 // lowercase words, plural "s" stripped so "candles" matches "candle"
 const tokens = (s) =>
@@ -286,6 +290,13 @@ export async function parseOrder(message, sellerId) {
   if (raw.dueAt) {
     if (Number.isNaN(Date.parse(raw.dueAt))) problems.push(`Could not read the due date "${raw.dueAt}"`);
     else dueAt = raw.dueAt;
+  }
+
+  let customerEmail;
+  if (raw.customerEmail) {
+    const email = String(raw.customerEmail).trim();
+    if (EMAIL_RE.test(email)) customerEmail = email.toLowerCase();
+    else problems.push(`Could not read the email "${raw.customerEmail}"`);
   }
 
   // ---- matching: one candidate per product, and one per product + variant ----
@@ -368,6 +379,7 @@ export async function parseOrder(message, sellerId) {
   const result = {
     customerName: raw.customerName ?? undefined,
     customerContact: raw.customerContact ?? undefined,
+    customerEmail,
     platform,
     items,
     price: undefined, // the seller sets this
