@@ -5,6 +5,7 @@ import Product from '../models/Product.js';
 import mongoose from 'mongoose';
 import { deductMaterials, restoreMaterials, checkOrder } from '../services/inventory.js';
 import { parseOrder } from '../services/extraction.js';
+import { notifyCustomer } from '../services/notify.js';
 
 
 const router = Router();
@@ -152,6 +153,7 @@ router.post('/', async (req, res, next) => {
     const {
       customerName,
       customerContact,
+      customerEmail,
       platform,
       items,
       price,
@@ -174,6 +176,10 @@ router.post('/', async (req, res, next) => {
     if (Number(depositAmount) > Number(price)) {
       return res.status(400).json({ error: 'Deposit cannot be more than the price' });
     }
+    // Email is optional, but if given it must look like an email
+    if (customerEmail && !/^\S+@\S+\.\S+$/.test(customerEmail.trim())) {
+      return res.status(400).json({ error: 'Customer email is not a valid email address' });
+    }
 
 
     // Check every item against the seller's own products, and copy the
@@ -188,6 +194,7 @@ router.post('/', async (req, res, next) => {
       seller: req.session.userId,
       customerName,
       customerContact,
+      customerEmail: customerEmail ? customerEmail.trim() : undefined, // empty string = no email
       platform: platform || undefined, // empty string would fail the enum check
       items: checked.items,
       price,
@@ -199,6 +206,11 @@ router.post('/', async (req, res, next) => {
       rawMessage,
     });
     await deductMaterials(order);
+
+    // Send the "we're working on it" confirmation straight away
+    await order.populate('items.product');
+    await notifyCustomer(order);
+
     res.status(201).json(order);
   } catch (err) {
     // Bad input (missing required field, wrong enum, invalid id) → 400 with a readable message
@@ -230,6 +242,61 @@ router.get('/:id', async (req, res, next) => {
 router.put('/:id', notImplemented);
 
 
+// PATCH /api/orders/bulk-status
+// Body: { ids: [orderId, ...], status }
+// Changes the stage of many orders at once (bulk update from the Order Log).
+// Cancelled orders, and orders already at that stage, are skipped.
+router.patch('/bulk-status', async (req, res, next) => {
+  try {
+    const { ids, status } = req.body;
+    if (!['in-progress', 'ready', 'completed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status.' });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'Select at least one order.' });
+    }
+    if (ids.length > 200) {
+      return res.status(400).json({ message: 'You can update at most 200 orders at a time.' });
+    }
+    for (const id of ids) {
+      if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ message: 'Invalid order id.' });
+      }
+    }
+
+    // Only this seller's orders that can actually change
+    const orders = await Order.find({
+      _id: { $in: ids },
+      seller: req.session.userId,
+      status: { $nin: ['cancelled', status] },
+    }).populate('items.product');
+
+    for (const order of orders) {
+      order.status = status;
+      await order.save();
+    }
+
+    let emailed = 0;
+    for (const order of orders) {
+      if (order.customerEmail) emailed += 1;
+    }
+    res.json({ updated: orders.length, skipped: ids.length - orders.length, emailed: emailed });
+
+    // Email the customers after replying, so the seller doesn't have to
+    // wait for every email to send before the page updates.
+    for (const order of orders) {
+      try {
+        await notifyCustomer(order);
+      } catch (err) {
+        console.error('Bulk update email failed:', err.message);
+      }
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 // PATCH /api/orders/:id/status
 // Body: { status }. Cancelling goes through POST /:id/cancel instead.
 router.patch('/:id/status', async (req, res, next) => {
@@ -244,6 +311,7 @@ router.patch('/:id/status', async (req, res, next) => {
       { new: true }
     ).populate('items.product');
     if (!order) return res.status(404).json({ message: 'Order not found or already cancelled.' });
+    await notifyCustomer(order); // emails the customer, if they gave an email
     res.json({ order });
   } catch (err) {
     next(err);
@@ -298,6 +366,7 @@ router.post('/:id/cancel', async (req, res, next) => {
     order.cancelledAt = new Date();
     await order.save();
     await order.populate('items.product');
+    await notifyCustomer(order);
     res.json({ order });
   } catch (err) {
     next(err);
