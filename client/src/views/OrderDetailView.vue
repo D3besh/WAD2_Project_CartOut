@@ -166,7 +166,7 @@ onMounted(loadOrder);
 </script>
 
 <template>
-  <div style="max-width: 720px">
+  <div style="max-width: 720px; margin: 0 auto;">
     <RouterLink to="/orders" class="fw-semibold text-decoration-none">
       <i class="bi bi-arrow-left" aria-hidden="true"></i> Order log
     </RouterLink>
@@ -213,6 +213,11 @@ onMounted(loadOrder);
         @cancel="cancelOrder"
         @refund="refundOrder"
       />
+
+      <p v-if="order.customerEmail" class="small text-muted mb-3">
+        <i class="bi bi-envelope" aria-hidden="true"></i>
+        Email updates are sent automatically to {{ order.customerEmail }}.
+      </p>
 
       <ShareMessage v-model:message="shown" />
     </template>

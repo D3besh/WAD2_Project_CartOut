@@ -1,9 +1,14 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
 import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
+import { formatDay, dayForecast } from '../utils/forecast.js';
+
+const route = useRoute();   // the current address (to read ?add=1)
+const router = useRouter(); // to change the address
 
 // =====================================================
 // 1. DATA
@@ -13,6 +18,7 @@ const materials = ref([]);        // all materials (needed for recipes and "can 
 const errorMessage = ref('');
 const infoMessage = ref('');      // blue message, e.g. "... was archived"
 const search = ref('');
+const forecast = ref(null);       // the 30-day forecast from the server (null = not loaded)
 
 // Add / Edit pop-up
 const showForm = ref(false);
@@ -33,11 +39,39 @@ async function loadData() {
   } catch (error) {
     errorMessage.value = getErrorText(error);
   }
+
+  await loadForecast();
+}
+
+// Load the forecast (for the "Tomorrow" column)
+async function loadForecast() {
+  try {
+    let response = await axios.get('/api/materials/forecast');
+    forecast.value = response.data;
+  } catch (error) {
+    // The forecast is extra information, so if it fails the page still works
+    console.error('Forecast failed:', getErrorText(error));
+  }
 }
 
 onMounted(() => {
   loadData();
+  openFormFromLink(); // opened from the floating "+" button?
 });
+
+// The floating "+" button links here with ?add=1 (e.g. /materials?add=1).
+// When we see it, open the Add pop-up, then remove ?add=1 from the address
+// so refreshing the page doesn't open the pop-up again.
+function openFormFromLink() {
+  if (route.query.add === '1') {
+    openAddForm();
+    router.replace({ query: {} });
+  }
+}
+
+// Also works when you're already on this page and press the floating button
+// (the page doesn't reload, only the ?add=1 part of the address changes)
+watch(() => route.query.add, openFormFromLink);
 
 function getErrorText(error) {
   if (error.response && error.response.data && error.response.data.message) {
@@ -55,15 +89,18 @@ function getErrorText(error) {
 //   - the plain product (main recipe only). Called "Regular" when the product has variants.
 //   - one row PER VARIANT (main recipe + that variant's extras)
 //
-// Each item in this list = { product, rows: [{ name, price, canMake, limitedBy, warnings }] }
+// Each item in this list = { product, rows: [{ name, price, canMake, limitedBy, warnings, tomorrow }] }
+//   tomorrow = { orders, extra } from the forecast, or null
 const productCards = computed(() => {
   let list = [];
 
   for (let product of products.value) {
     let rows = [];
+    let hasVariants = product.variants.length > 0;
 
     // The plain product: just the main recipe.
-    // Always called "Regular", so every card looks the same
+    // Always called "Regular", so every card looks the same.
+    // In the forecast, a product without variants is "<id>"; with variants, its Regular is "<id>:regular".
     let plain = calculateCanMake(fullRecipe(product, null), materials.value);
     rows.push({
       name: 'Regular',
@@ -71,9 +108,10 @@ const productCards = computed(() => {
       canMake: plain.canMake,
       limitedBy: plain.limitedBy,
       warnings: plain.warnings,
+      tomorrow: tomorrowFor(hasVariants ? product.id + ':regular' : product.id),
     });
 
-    if (product.variants.length > 0) {
+    if (hasVariants) {
       // One row per variant: main recipe + that variant's extras
       for (let variant of product.variants) {
         let result = calculateCanMake(fullRecipe(product, variant), materials.value);
@@ -83,6 +121,7 @@ const productCards = computed(() => {
           canMake: result.canMake,
           limitedBy: result.limitedBy,
           warnings: result.warnings,
+          tomorrow: tomorrowFor(product.id + ':' + variant._id),
         });
       }
     }
@@ -114,6 +153,61 @@ const cannotMake = computed(() => {
     }
   }
   return names;
+});
+
+// Tomorrow's forecast for one row: { orders, extra }, or null if there's no forecast yet
+function tomorrowFor(rowId) {
+  if (forecast.value === null) {
+    return null;
+  }
+  return dayForecast(forecast.value.products.items, rowId, 1); // 0 = today, 1 = tomorrow
+}
+
+// 1 → "1 order", 3 → "3 orders"
+function ordersText(count) {
+  return count === 1 ? '1 order' : count + ' orders';
+}
+
+// Tomorrow's date, e.g. "Sat, 24 Oct"
+const tomorrowLabel = computed(() => {
+  if (forecast.value === null) {
+    return '';
+  }
+  let items = forecast.value.products.items;
+  if (items.length === 0) {
+    return '';
+  }
+  return formatDay(items[0].daily[1].date);
+});
+
+// Products/variants we may not have enough of tomorrow (for the banner).
+// Orders already logged had their materials taken out of stock when they were logged,
+// so "can make" is what's left AFTER those orders. We only need to cover the EXTRA expected.
+//   short = extra expected − can make
+const shortTomorrow = computed(() => {
+  let list = [];
+  for (let item of productCards.value) {
+    for (let row of item.rows) {
+      if (row.tomorrow === null || row.canMake === null) {
+        continue; // no forecast, or no recipe to count with
+      }
+      let short = row.tomorrow.extra - row.canMake;
+      if (short > 0) {
+        let fullName = item.product.name;
+        if (item.product.variants.length > 0) {
+          fullName = fullName + ' (' + row.name + ')';
+        }
+        list.push({
+          name: fullName,
+          orders: row.tomorrow.orders,
+          extra: row.tomorrow.extra,
+          canMake: row.canMake,
+          short: short,
+        });
+      }
+    }
+  }
+  return list;
 });
 
 // Colour class of the "can make" number (the classes are in inventory.css)
@@ -328,6 +422,23 @@ async function deleteProduct() {
       </div>
     </div>
 
+    <!-- ===== Tomorrow: products we may not have enough of ===== -->
+    <div v-if="shortTomorrow.length > 0" class="inv-banner inv-banner--warn mb-3">
+      <div>
+        <p class="inv-banner__title">
+          📈 Tomorrow ({{ tomorrowLabel }}) you may not have enough for {{ shortTomorrow.length }} product(s)
+        </p>
+        <ul>
+          <li v-for="s in shortTomorrow" :key="s.name">
+            <strong>{{ s.name }}</strong>:
+            {{ ordersText(s.orders) }} + ~{{ s.extra }} expected, you can make {{ s.canMake }} more
+            → <strong>short by {{ s.short }}</strong>
+          </li>
+        </ul>
+      </div>
+      <RouterLink to="/forecast" class="fc-link align-self-end">See full forecast →</RouterLink>
+    </div>
+
     <!-- ===== Search ===== -->
     <div class="sk-card inv-toolbar mb-4">
       <span class="inv-meta">{{ productCards.length }} product(s)</span>
@@ -363,6 +474,12 @@ async function deleteProduct() {
             </div>
             <div v-if="row.limitedBy" class="inv-cap-row__note">Limited by {{ row.limitedBy }}</div>
             <div v-for="w in row.warnings" :key="w" class="inv-cap-row__warn">⚠️ {{ w }}</div>
+
+            <!-- From the forecast -->
+            <div v-if="row.tomorrow !== null" class="fc-tomorrow">
+              <span>Tomorrow</span>
+              <span><strong>{{ ordersText(row.tomorrow.orders) }}</strong> + ~{{ row.tomorrow.extra }} more</span>
+            </div>
           </div>
         </div>
       </ProductCard>

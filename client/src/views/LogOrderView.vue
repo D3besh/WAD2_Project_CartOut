@@ -21,6 +21,7 @@ function newItem() {
 const emptyForm = () => ({
   customerName: '',
   customerContact: '',
+  customerEmail: '',
   platform: '',
   items: [newItem()],
   price: null,
@@ -295,7 +296,12 @@ const autoFillForm = async () => {
       missingFields.value.push('Fulfilment Method');
     }
 
-    // Delivery address
+    if (data.customerEmail) {
+      form.customerEmail = data.customerEmail;
+      filledFields.value.push('Customer Email');
+    } else {
+      missingFields.value.push('Customer Email');
+    }
 
     // Delivery address
     if (data.fulfilmentMethod === 'delivery') {
@@ -352,6 +358,60 @@ const autoFillForm = async () => {
     <div v-if="saveError" class="alert alert-danger" role="alert">{{ saveError }}</div>
 
     <form @submit.prevent="saveOrder" novalidate>
+      <!-- Start from the customer's message: paste it, then Auto fill -->
+      <section class="autofill-card mb-4" aria-labelledby="autofill-title">
+        <h2 id="autofill-title" class="h5 mb-1">Customer's message</h2>
+        <p class="autofill-hint mb-2">
+          Paste the customer's message and we'll fill in the form for you. You can check and change everything before saving.
+        </p>
+
+        <label for="rawMessage" class="visually-hidden">Customer's message (optional)</label>
+        <textarea id="rawMessage" v-model="form.rawMessage" rows="3" class="form-control"
+          placeholder="e.g. Hi! Can I get 2 boxes of chocolate chip cookies for Saturday? I'll collect."></textarea>
+
+        <div class="autofill-actions">
+          <span class="autofill-note">Optional. Kept with the order for reference.</span>
+          <!-- type="button": without it, a button inside a <form> also submits the form -->
+          <button type="button" @click="autoFillForm" class="btn btn-outline-primary"
+            :disabled="form.rawMessage.length === 0 || isProcessing">
+            {{ isProcessing ? 'Reading message…' : '✨ Auto fill from message' }}
+          </button>
+        </div>
+
+      <div v-if="isProcessing" class="processing-overlay">
+        <div class="processing-box">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+
+          <h5>Processing order...</h5>
+
+          <p class="text-muted mb-0">
+            Extracting order details. Please be patient. Should not take more than 20s.
+          </p>
+        </div>
+      </div>
+
+      <div v-if="filledFields.length > 0 || missingFields.length > 0" class="af-results" role="status">
+        <div v-if="filledFields.length > 0" class="af-row">
+          <span class="af-label">✓ Filled in</span>
+          <span v-for="field in filledFields" :key="field" class="af-chip af-chip--ok">{{ field }}</span>
+        </div>
+
+        <div v-if="missingFields.length > 0" class="af-row">
+          <span class="af-label">Not in message</span>
+          <span v-for="field in missingFields" :key="field" class="af-chip af-chip--todo">{{ field }}</span>
+        </div>
+
+        <div v-if="detectionProblems.length > 0" class="af-review">
+          <strong>Needs review:</strong>
+          <ul class="mb-0">
+            <li v-for="(problem, index) in detectionProblems" :key="index">
+              {{ problem }}
+            </li>
+          </ul>
+        </div>
+      </div>
+      </section>
+
       <!-- Customer -->
       <fieldset class="mb-4">
         <legend class="h5">Customer</legend>
@@ -359,18 +419,20 @@ const autoFillForm = async () => {
         <div class="mb-3">
           <label for="customerName" class="form-label">Name *</label>
           <input id="customerName" v-model="form.customerName" class="form-control"
-            :class="{ 'is-invalid': isMissing('Customer name') }" />
+            :class="{ 'is-invalid': isMissing('Customer name'), 'is-autofilled': filledFields.includes('Customer Name') }" />
         </div>
 
         <div class="row g-3">
           <div class="col-sm-6">
             <label for="customerContact" class="form-label">Contact</label>
             <input id="customerContact" v-model="form.customerContact" class="form-control"
+              :class="{ 'is-autofilled': filledFields.includes('Contact') }"
               placeholder="Phone or handle" />
           </div>
           <div class="col-sm-6">
             <label for="platform" class="form-label">Ordered via</label>
-            <select id="platform" v-model="form.platform" class="form-select">
+            <select id="platform" v-model="form.platform" class="form-select"
+              :class="{ 'is-autofilled': filledFields.includes('Platform') }">
               <option value="">Not specified</option>
               <option value="whatsapp">WhatsApp</option>
               <option value="instagram">Instagram</option>
@@ -378,6 +440,14 @@ const autoFillForm = async () => {
               <option value="tiktok">TikTok</option>
               <option value="other">Other</option>
             </select>
+          </div>
+          <div class="col-12">
+            <label for="customerEmail" class="form-label">Email (optional)</label>
+            <input id="customerEmail" v-model="form.customerEmail" type="email" class="form-control"
+              placeholder="customer@example.com" aria-describedby="customerEmailHelp" />
+            <div id="customerEmailHelp" class="form-text">
+              If you add an email, the customer gets an update automatically each time the order stage changes.
+            </div>
           </div>
         </div>
       </fieldset>
@@ -395,7 +465,7 @@ const autoFillForm = async () => {
           <div class="col-sm-5">
             <label :for="`product-${index}`" class="form-label">Product *</label>
             <select :id="`product-${index}`" v-model="item.product" class="form-select"
-              :class="{ 'is-invalid': !item.product && isMissing('Products and quantities') }"
+              :class="{ 'is-invalid': !item.product && isMissing('Products and quantities'), 'is-autofilled': filledFields.includes('Items') }"
               @change="onProductChange(item)">
               <option value="" disabled>Choose a product</option>
               <option v-for="p in products" :key="p._id" :value="p._id">{{ p.name ?? p._id }}</option>
@@ -404,6 +474,7 @@ const autoFillForm = async () => {
           <div class="col-sm-3">
             <label :for="`variant-${index}`" class="form-label">Variant</label>
             <select :id="`variant-${index}`" v-model="item.variantId" class="form-select"
+              :class="{ 'is-autofilled': filledFields.includes('Variant') }"
               :disabled="variantsFor(item).length === 0">
               <!-- Placeholder only when there's nothing to choose; otherwise Regular is the default -->
               <option v-if="variantsFor(item).length === 0" :value="null" disabled>{{ variantPlaceholder(item) }}</option>
@@ -418,7 +489,8 @@ const autoFillForm = async () => {
           </div>
           <div class="col-sm-2">
             <label :for="`qty-${index}`" class="form-label">Qty *</label>
-            <input :id="`qty-${index}`" v-model.number="item.quantity" type="number" min="1" class="form-control" />
+            <input :id="`qty-${index}`" v-model.number="item.quantity" type="number" min="1" class="form-control"
+              :class="{ 'is-autofilled': filledFields.includes('Quantity') }" />
           </div>
           <div class="col-sm-2">
             <button type="button" class="btn btn-outline-danger w-100" :disabled="form.items.length === 1"
@@ -426,7 +498,7 @@ const autoFillForm = async () => {
           </div>
         </div>
 
-        <button type="button" class="btn btn-outline-secondary btn-sm" @click="addItem">Add another item</button>
+        <button type="button" class="btn btn-outline-primary btn-sm" @click="addItem">+ Add another item</button>
       </fieldset>
 
       <!-- Payment -->
@@ -448,7 +520,8 @@ const autoFillForm = async () => {
           </div>
           <div class="col-sm-4">
             <label for="paymentStatus" class="form-label">Status</label>
-            <select id="paymentStatus" v-model="form.paymentStatus" class="form-select">
+            <select id="paymentStatus" v-model="form.paymentStatus" class="form-select"
+              :class="{ 'is-autofilled': filledFields.includes('Payment Status') }">
               <option value="unpaid">Unpaid</option>
               <option value="deposit">Deposit paid</option>
               <option value="paid">Fully paid</option>
@@ -457,7 +530,7 @@ const autoFillForm = async () => {
           <div v-if="form.paymentStatus === 'deposit'" class="col-sm-4">
             <label for="depositAmount" class="form-label">Deposit ($) *</label>
             <input id="depositAmount" v-model.number="form.depositAmount" type="number" min="0" step="0.01"
-              class="form-control" :class="{ 'is-invalid': isMissing('Deposit amount') }" />
+              class="form-control" :class="{ 'is-invalid': isMissing('Deposit amount'), 'is-autofilled': filledFields.includes('Deposit Amount') }" />
           </div>
         </div>
       </fieldset>
@@ -469,7 +542,7 @@ const autoFillForm = async () => {
           <div class="col-sm-6">
             <label for="fulfilmentMethod" class="form-label">Collection or delivery *</label>
             <select id="fulfilmentMethod" v-model="form.fulfilmentMethod" class="form-select"
-              :class="{ 'is-invalid': isMissing('Collection or delivery') }">
+              :class="{ 'is-invalid': isMissing('Collection or delivery'), 'is-autofilled': filledFields.includes('Fulfilment Method') }">
               <option value="" disabled>Choose one</option>
               <option value="self-collect">Self-collect</option>
               <option value="delivery">Delivery</option>
@@ -478,88 +551,29 @@ const autoFillForm = async () => {
           <div class="col-sm-6">
             <label for="dueAt" class="form-label">Due *</label>
             <input id="dueAt" v-model="form.dueAt" type="datetime-local" class="form-control"
-              :class="{ 'is-invalid': isMissing('Due date') }" />
+              :class="{ 'is-invalid': isMissing('Due date'), 'is-autofilled': filledFields.includes('Due Date') }" />
           </div>
           <div v-if="form.fulfilmentMethod === 'delivery'" class="col-12">
             <label for="deliveryAddress" class="form-label">Delivery address *</label>
             <input id="deliveryAddress" v-model="form.deliveryAddress" class="form-control"
-              :class="{ 'is-invalid': isMissing('Delivery address') }" />
+              :class="{ 'is-invalid': isMissing('Delivery address'), 'is-autofilled': filledFields.includes('Delivery Address') }" />
           </div>
         </div>
       </fieldset>
 
-      <!-- Original message -->
-      <div class="mb-4">
-        <label for="rawMessage" class="form-label">Customer's message (optional)</label>
-        <textarea id="rawMessage" v-model="form.rawMessage" rows="3" class="form-control"
-          placeholder="Paste the original message for reference"></textarea>
+      <!-- Footer: what's still missing on the left, Save on the right (stays visible while scrolling) -->
+      <div class="order-footer">
+        <p class="order-footer__note mb-0">
+          <template v-if="missing.length">
+            {{ missing.length }} required {{ missing.length === 1 ? 'field' : 'fields' }} left: {{ missing.join(', ') }}
+          </template>
+          <template v-else>All set. Ready to save.</template>
+        </p>
+
+        <button type="submit" class="btn btn-primary order-footer__save" :disabled="missing.length > 0 || saving">
+          {{ saving ? 'Saving…' : 'Save order' }}
+        </button>
       </div>
-
-      <!-- type="button": without it, a button inside a <form> also submits the form -->
-      <button type="button" @click="autoFillForm" class="btn btn-primary"
-        :disabled="form.rawMessage.length === 0 || isProcessing">
-        {{ isProcessing ? 'Processing...' : 'Auto Fill' }}
-      </button>
-
-      <div v-if="isProcessing" class="processing-overlay">
-        <div class="processing-box">
-          <div class="spinner-border text-primary mb-3" role="status"></div>
-
-          <h5>Processing order...</h5>
-
-          <p class="text-muted mb-0">
-            Extracting order details. Please be patient. Should not take more than 20s.
-          </p>
-        </div>
-      </div>
-
-      <div v-if="filledFields.length > 0 || missingFields.length > 0" class="mt-3">
-        <div class="alert alert-success">
-          <div class="fw-bold mb-2">
-            ✓ Auto-fill completed
-          </div>
-
-          <div class="fw-bold">Detected:</div>
-
-          <ul class="mb-0">
-            <li v-for="field in filledFields" :key="field">
-              ✓ {{ field }}
-            </li>
-          </ul>
-        </div>
-
-        <div v-if="missingFields.length > 0" class="alert alert-warning">
-          <div class="fw-bold mb-2">
-            Not detected:
-          </div>
-
-          <ul class="mb-0">
-            <li v-for="field in missingFields" :key="field">
-              ○ {{ field }}
-            </li>
-          </ul>
-        </div>
-
-        <div v-if="detectionProblems.length > 0" class="alert alert-danger">
-          <div class="fw-bold mb-2">
-            Needs review:
-          </div>
-
-          <ul class="mb-0">
-            <li v-for="(problem, index) in detectionProblems" :key="index">
-              {{ problem }}
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <p v-if="missing.length" class="text-muted small">
-        {{ missing.length }} required {{ missing.length === 1 ? 'field' : 'fields' }} left: {{ missing.join(', ') }}
-      </p>
-
-      <button type="submit" class="btn btn-primary" :disabled="missing.length > 0 || saving">
-        {{ saving ? 'Saving…' : 'Save order' }}
-      </button>
     </form>
   </section>
 </template>
@@ -586,5 +600,140 @@ const autoFillForm = async () => {
   border-radius: 10px;
   text-align: center;
   min-width: 280px;
+}
+
+/* ---------- Customer's message + Auto fill ---------- */
+.autofill-card {
+  background: var(--sk-brand-soft);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius);
+  padding: 1rem 1.15rem;
+}
+
+.autofill-hint {
+  font-size: 0.9rem;
+  color: var(--sk-muted);
+}
+
+.autofill-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.autofill-note {
+  font-size: 0.8rem;
+  color: var(--sk-muted);
+}
+
+.autofill-actions .btn {
+  background-color: var(--sk-surface);
+}
+.autofill-actions .btn:hover:not(:disabled) {
+  background-color: var(--sk-brand);
+}
+
+/* ---------- Auto fill results (tags) ---------- */
+.af-results {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--sk-border);
+}
+
+.af-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.af-label {
+  min-width: 6.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sk-muted);
+}
+
+.af-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.af-chip--ok {
+  background: var(--sk-ok-soft);
+  color: var(--sk-ok);
+}
+
+.af-chip--todo {
+  background: var(--sk-surface);
+  color: var(--sk-muted);
+  border: 1px dashed var(--sk-brand-muted);
+}
+
+.af-review {
+  background: var(--sk-warn-soft);
+  color: var(--sk-warn);
+  border-radius: var(--sk-radius-sm);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.af-review ul {
+  padding-left: 1.1rem;
+  margin-top: 0.25rem;
+}
+
+/* Fields that Auto fill filled in: soft green outline */
+.is-autofilled:not(.is-invalid) {
+  border-color: var(--sk-ok);
+  box-shadow: 0 0 0 3px rgb(31 122 109 / 0.15);
+}
+
+/* ---------- Footer with Save ---------- */
+.order-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-top: 1.5rem;
+  padding: 0.85rem 1rem;
+  background: var(--sk-surface);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius);
+  box-shadow: var(--sk-shadow-lift);
+}
+
+.order-footer__note {
+  font-size: 0.85rem;
+  color: var(--sk-muted);
+}
+
+.order-footer__save {
+  flex-shrink: 0;
+  min-width: 10rem;
+  padding-block: 0.6rem;
+}
+
+/* Phones: note on top, full-width Save button */
+@media (max-width: 575.98px) {
+  .order-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .order-footer__save {
+    width: 100%;
+  }
 }
 </style>

@@ -9,26 +9,11 @@
    3. Cards        – material card and product card
    4. Capacity     – the "Can make now" box on product cards
    5. Pop-ups      – rounded modal, recipe rows, variant boxes
+   6. Forecast     – "Restock soon" bars, "Tomorrow" column, Forecast page
    ========================================================================= */
 
-/* ---------- 0. Guard ----------
-   Something global in the project restyles every .btn (teal, full width).
-   On these two pages, put Bootstrap's own button colours back.
-   .inv-page .btn is more specific than .btn, so this wins wherever the other rule is. */
-.inv-page .btn {
-  width: auto;
-  background-color: var(--bs-btn-bg);
-  color: var(--bs-btn-color);
-  border-color: var(--bs-btn-border-color);
-}
-.inv-page .btn:hover {
-  background-color: var(--bs-btn-hover-bg);
-  color: var(--bs-btn-hover-color);
-  border-color: var(--bs-btn-hover-border-color);
-}
-.inv-page .page-header .btn { flex-shrink: 0; }
-.inv-page .btn { padding: 0.5rem 1.15rem; font-size: 0.95rem; line-height: 1.4; }
-.inv-page .btn-sm { padding: 0.3rem 0.9rem; font-size: 0.85rem; }
+/* ---------- 0. Header button ---------- */
+.inv-page .page-header .btn { flex-shrink: 0; }   /* "+ Add" never squashes */
 
 /* ---------- 1. Toolbar ---------- */
 .inv-toolbar {
@@ -62,21 +47,8 @@
 .inv-banner--warn { background: var(--sk-warn-soft); color: var(--sk-warn); border-color: rgb(168 101 15 / 0.18); }
 .inv-banner--warn strong { color: var(--sk-text); }
 
-.inv-banner--info { background: var(--sk-brand-soft); color: var(--sk-brand-dark); border-color: rgb(85 122 43 / 0.18); }
+.inv-banner--info { background: var(--sk-brand-soft); color: var(--sk-brand-dark); border-color: rgb(80 80 129 / 0.2); }
 .inv-banner--info .inv-hint { color: var(--sk-muted); }
-
-/* "Show 4 more" link at the bottom of a banner */
-.inv-page .inv-more {
-  padding: 0;
-  margin-top: 0.5rem;
-  border: none;
-  background: none;
-  color: var(--sk-brand-dark);
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.inv-page .inv-more:hover { color: var(--sk-brand); background: none; }
 
 .inv-banner--danger { background: var(--sk-danger-soft); color: var(--sk-danger); border-color: rgb(192 57 43 / 0.18); }
 
@@ -269,7 +241,7 @@
 }
 .inv-line .unit { color: var(--sk-muted); font-size: 0.85rem; }
 
-/* Small round ✕ button for removing a row */
+/* Small square ✕ button for removing a row */
 .inv-page .inv-remove {
   width: 2.1rem;
   height: 2.1rem;
@@ -277,7 +249,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--sk-radius-btn);
   color: var(--sk-muted);
 }
 .inv-page .inv-remove:hover { color: var(--sk-danger); }
@@ -313,6 +285,207 @@
 }
 .inv-shop-row:last-child { border-bottom: none; }
 
+/* ---------- 6. Forecast ---------- */
+
+/* Shared bits */
+.fc-link { color: var(--sk-brand); font-weight: 700; text-decoration: none; font-size: 0.88rem; }
+.fc-link:hover { color: var(--sk-brand-dark); text-decoration: underline; }
+.fc-note { font-size: 0.8rem; color: var(--sk-muted); margin: 0.6rem 0 0; }
+.fc-short { display: block; font-size: 0.78rem; font-weight: 700; color: var(--sk-danger); }
+.fc-ok { display: block; font-size: 0.78rem; font-weight: 600; color: var(--sk-ok); }
+.fc-panel-title { font-size: 1.05rem; font-weight: 800; margin: 0; }
+
+/* Materials page: "Restock soon" card with one bar per material */
+.fc-restock {
+  background: var(--sk-surface);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius);
+  box-shadow: var(--sk-shadow);
+  padding: 1rem 1.15rem;
+}
+.fc-restock__title { font-size: 1.05rem; font-weight: 800; margin: 0 0 0.5rem; }
+
+/* Name | bar | days left, and the "Buy ..." line under the bar */
+.fc-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 110px;
+  align-items: center;
+  gap: 0.3rem 1rem;
+  padding: 0.6rem 0;
+}
+.fc-row + .fc-row { border-top: 1px solid var(--sk-border); }
+.fc-row__name { font-weight: 700; min-width: 0; }
+.fc-bar {
+  height: 10px;
+  background: var(--sk-bg);
+  border: 1px solid var(--sk-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.fc-bar span { display: block; height: 100%; border-radius: 999px; }
+.fc-bar span.is-red { background: var(--sk-danger); }
+.fc-bar span.is-amber { background: #d08a1f; }
+.fc-days { font-weight: 700; font-size: 0.9rem; text-align: right; white-space: nowrap; }
+.fc-days.is-red { color: var(--sk-danger); }
+.fc-days.is-amber { color: var(--sk-warn); }
+.fc-action { grid-column: 2 / 4; font-size: 0.88rem; color: var(--sk-muted); }
+.fc-action strong { color: var(--sk-text); }
+.fc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-top: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--sk-border);
+  font-size: 0.8rem;
+  color: var(--sk-muted);
+}
+
+/* Products page: "Tomorrow   3 orders + ~1 more" under each option */
+.fc-tomorrow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.5rem;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--sk-muted);
+  background: var(--sk-brand-soft);
+  border-radius: var(--sk-radius-sm);
+  padding: 0.25rem 0.5rem;
+}
+.fc-tomorrow strong { color: var(--sk-text); }
+
+/* Forecast page: dark summary bar */
+.wk-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  background: var(--sk-brand-deep);
+  color: #d6d5ea;
+  border-radius: var(--sk-radius);
+  padding: 1rem 1.25rem;
+}
+.wk-summary strong { color: #ffffff; }
+
+/* Forecast page: the 7 day cards (scrolls sideways on small screens) */
+.wk-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(112px, 1fr));
+  gap: 0.6rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+.wk-day {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--sk-surface);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius);
+  padding: 0.75rem 0.7rem;
+  cursor: pointer;
+}
+.wk-day:hover { border-color: var(--sk-brand-muted); }
+.wk-day.is-selected { border: 2px solid var(--sk-brand-deep); box-shadow: var(--sk-shadow); }
+.wk-day:focus-visible { outline: 3px solid rgb(80 80 129 / 0.35); outline-offset: 2px; }
+.wk-day__name { font-weight: 800; }
+.wk-day__date { font-size: 0.78rem; color: var(--sk-muted); margin-top: -0.35rem; }
+.wk-bars { height: 90px; display: flex; flex-direction: column; justify-content: flex-end; }
+.wk-bars span { display: block; width: 100%; }
+.wk-bars__extra { background: #b7b6d6; border-radius: 4px 4px 0 0; }
+.wk-bars__orders { background: var(--sk-brand-deep); }
+.wk-day__nums { font-size: 0.8rem; color: var(--sk-muted); line-height: 1.35; }
+.wk-day__nums strong { color: var(--sk-text); }
+.wk-day__time { font-weight: 800; }
+.wk-day__time.is-busy { color: var(--sk-danger); }
+.wk-tag { align-self: flex-start; font-size: 0.68rem; font-weight: 700; border-radius: 999px; padding: 0.1rem 0.45rem; }
+.wk-tag--busy { background: var(--sk-danger-soft); color: var(--sk-danger); }
+.wk-tag--holiday { background: var(--sk-warn-soft); color: var(--sk-warn); }
+
+/* Little colour squares for "Orders" / "Expected extra" */
+.fc-key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 0.35rem; vertical-align: -1px; }
+.fc-key--orders { background: var(--sk-brand-deep); }
+.fc-key--extra { background: #b7b6d6; }
+
+/* Selected day (left) + Buy this week (right) */
+.wk-two { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+
+/* Tables on the Forecast page */
+.fc-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.fc-table th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sk-muted);
+  text-align: right;
+  white-space: nowrap;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--sk-border);
+}
+.fc-table td { padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--sk-border); text-align: right; vertical-align: top; }
+.fc-table th:first-child,
+.fc-table td:first-child { text-align: left; }
+.fc-table tr.is-variant td { color: var(--sk-muted); font-size: 0.86rem; padding-top: 0.4rem; padding-bottom: 0.4rem; }
+.fc-table tr.is-variant td:first-child { padding-left: 1.6rem; }
+.fc-table tr.is-total td { font-weight: 800; border-bottom: none; }
+.fc-table tr.is-clickable { cursor: pointer; }
+.fc-table tr.is-clickable:hover td { background: var(--sk-bg); }
+.fc-table tr.is-selected td { background: var(--sk-brand-soft); }
+.fc-caret { display: inline-block; width: 1rem; color: var(--sk-muted); }
+
+/* "Buy this week" rows */
+.fc-buy { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.6rem 0; border-top: 1px solid var(--sk-border); }
+.fc-buy:first-of-type { border-top: none; }
+.fc-buy__when { font-weight: 700; white-space: nowrap; }
+.fc-buy__when.is-red { color: var(--sk-danger); }
+
+/* "Next 30 days by product" fold-out button */
+.fc-details {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  color: var(--sk-text);
+  background: var(--sk-surface);
+  border: 1px solid var(--sk-border);
+  border-radius: var(--sk-radius);
+  padding: 0.85rem 1.15rem;
+  cursor: pointer;
+}
+.fc-details:hover { border-color: var(--sk-brand-muted); }
+.fc-details__hint { color: var(--sk-muted); font-weight: 500; font-size: 0.88rem; }
+
+/* Chart header + Week / Day switch */
+.fc-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.fc-seg { display: inline-flex; border: 1px solid var(--sk-border); border-radius: var(--sk-radius-btn); overflow: hidden; }
+.fc-seg button { border: none; background: var(--sk-surface); color: var(--sk-muted); font-weight: 600; padding: 0.4rem 0.9rem; }
+.fc-seg button.is-on { background: var(--sk-brand-deep); color: #ffffff; }
+
+/* Bar chart */
+.fc-chart { display: block; width: 100%; height: auto; }
+.fc-chart__grid { stroke: var(--sk-text); stroke-opacity: 0.1; }
+.fc-chart__label { fill: var(--sk-muted); font-size: 12px; }
+.fc-chart__top { fill: var(--sk-text); font-size: 12px; font-weight: 700; }
+.fc-chart__orders { fill: var(--sk-brand-deep); }
+.fc-chart__extra { fill: #b7b6d6; }
+
+/* Tablets: stack the two panels */
+@media (max-width: 991.98px) {
+  .wk-two { grid-template-columns: 1fr; }
+}
+
 /* Phones: stack the form grids */
 @media (max-width: 575.98px) {
   .inv-search { max-width: none; }
@@ -320,4 +493,9 @@
   .inv-line .unit { display: none; }
   .inv-variant__fields { grid-template-columns: 1fr 1fr; }
   .inv-variant__fields > :first-child { grid-column: 1 / -1; }
+
+  /* Restock rows: name and days on top, bar and "Buy ..." underneath */
+  .fc-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .fc-bar { grid-column: 1 / -1; grid-row: 2; }
+  .fc-action { grid-column: 1 / -1; }
 }

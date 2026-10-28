@@ -1,7 +1,8 @@
-/* CartOut — home layout and light/dark display modes.
-   No colour-palette selection rules. */
+/* CartOut — Home page (dashboard) styles.
+   Colours come from the tokens in main.css (--sk-brand, --sk-text, ...),
+   so changing the colour scheme there updates this page too. */
 
-/* 1. Home-page layout */
+/* ---------- Home page layout ---------- */
 .home-order-wrapper {
   width: fit-content;
   max-width: 100%;
@@ -14,197 +15,44 @@
   box-sizing: border-box;
 }
 
-.home-order-button {
-  width: auto;
-  margin: 0;
-  white-space: nowrap;
+/* "See all" links under Running low / Fewest you can make */
+.home-link {
+  color: var(--sk-brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+.home-link:hover {
+  color: var(--sk-brand-dark);
+  text-decoration: underline;
 }
 
-.home-see-all {
-  background-color: #6c757d;
-  border-color: #6c757d;
-  color: white;
+/* Warnings like "Sugar is low" (Bootstrap's yellow is too light to read) */
+.home-warning {
+  color: var(--sk-warn);
 }
 
-.home-see-all:hover {
-  background-color: #5c636a;
-  border-color: #565e64;
-}
-
-.app-nav__link {
-  border-radius: 8px;
-}
-
-/* 3. Light mode */
-.light-mode {
-  color-scheme: light;
-  --sk-bg: #f8f7f2;
-  --sk-surface: #ffffff;
-  --sk-border: #e5e4da;
-  --sk-text: #2b2420;
-  --sk-muted: #7a6e66;
-  --bs-body-bg: #f8f7f2;
-  --bs-body-color: #2b2420;
-  --bs-secondary-color: #7a6e66;
-  --bs-border-color: #e5e4da;
-}
-
-.light-mode body,
-.light-mode #app,
-.light-mode .app-main {
-  background-color: #f8f7f2;
-  color: #2b2420;
-}
-
-/* Light mode — cards match page background */
-.light-mode .card,
-.light-mode .sk-card {
-  background-color: #f8f7f2;
-  color: #2b2420;
-  border-color: #e5e4da;
-}
-
-.light-mode .form-control,
-.light-mode .form-select {
-  background-color: white;
-  color: #2b2420;
-  border-color: #767676;
-}
-
-.light-mode .form-control::placeholder {
-  color: #6c757d;
-}
-
-/* Original CartOut teal buttons, independent of colour palettes. */
-.btn-primary,
-.btn-success {
-  background-color: #0f5f60;
-  border-color: #0f5f60;
-  color: white;
-}
-
-.btn-primary:hover,
-.btn-success:hover {
-  background-color: #0b4b4c;
-  border-color: #0b4b4c;
-  color: white;
-}
-
-.light-mode .app-nav__link {
-  color: #557a2b;
-}
-
-.light-mode .app-nav__link:hover,
-.light-mode .app-nav__link.router-link-exact-active {
-  background-color: #eef3e2;
-  color: #3f5c1f;
-}
-
-/* 4. Dark mode */
-/* Override the fixed light-mode colours from main.css. */
-.dark-mode {
-  color-scheme: dark;
-  --sk-bg: #181818;
-  --sk-surface: #282828;
-  --sk-border: #666666;
-  --sk-text: #f5f5f5;
-  --sk-muted: #cccccc;
-  --bs-body-bg: #181818;
-  --bs-body-color: #f5f5f5;
-  --bs-secondary-color: #cccccc;
-  --bs-border-color: #666666;
-}
-
-.dark-mode body,
-.dark-mode #app,
-.dark-mode .app-main {
-  background-color: #181818;
-  color: whitesmoke;
-}
-
-.dark-mode .card,
-.dark-mode .sk-card,
-.dark-mode .list-group-item,
-.dark-mode .modal-content {
-  background-color: #282828;
-  color: whitesmoke;
-  border-color: #666666;
-}
-
-
-.dark-mode .modal-header,
-.dark-mode .modal-footer {
-  border-color: #666666;
-}
-
-.dark-mode .text-secondary,
-.dark-mode .text-muted,
-.dark-mode .text-muted-sk {
-  color: #cccccc !important;
-}
-
-.dark-mode .form-control,
-.dark-mode .form-select,
-.dark-mode .input-group-text {
-  background-color: #333333;
-  color: whitesmoke;
-  border-color: #888888;
-}
-
-.dark-mode .form-control::placeholder {
-  color: #bbbbbb;
-}
-
-.dark-mode .card-title,
-.dark-mode .card h1,
-.dark-mode .card h2,
-.dark-mode .card h3,
-.dark-mode .card h4,
-.dark-mode .card h5,
-.dark-mode .card h6 {
-  color: whitesmoke;
-}
-
-.dark-mode .btn-close {
-  filter: invert(1) grayscale(100%) brightness(200%);
-}
-
-.dark-mode .btn-outline-secondary {
-  color: #dddddd;
-  border-color: #999999;
-}
-
-.dark-mode .btn-outline-secondary:hover {
-  background-color: #555555;
-  color: white;
-}
-
-.light-mode .card {
-  border-color: #c5c3bb;
-}
-
-/* Dashboard profit graph */
+/* ---------- Dashboard profit graph ---------- */
 .profit-line-chart {
   display: block;
   width: 100%;
   min-width: 520px;
   height: auto;
-  color: inherit;
+  color: var(--sk-brand);   /* line and dots */
 }
 
 .profit-chart-grid {
-  stroke: currentColor;
-  opacity: 0.15;
+  stroke: var(--sk-text);
+  opacity: 0.12;
 }
 
 .profit-chart-zero {
-  stroke: currentColor;
+  stroke: var(--sk-text);
   opacity: 0.4;
   stroke-dasharray: 4 4;
 }
 
 .profit-chart-label {
-  fill: currentColor;
+  fill: var(--sk-muted);
   font-size: 11px;
 }
 
@@ -219,70 +67,3 @@
 .profit-chart-point {
   fill: currentColor;
 }
-
-
-/* =========================================
-   Navbar: Light and Dark Mode
-   ========================================= */
-
-/* Light mode */
-.light-mode .app-nav,
-.light-mode .app-header {
-  background-color: #ffffff;
-  border-color: #e5e4da;
-}
-
-/* Dark mode */
-.dark-mode .app-nav,
-.dark-mode .app-header {
-  background-color: #171717;
-  border-color: #404040;
-}
-
-/* Dark mode navigation links */
-.dark-mode .app-nav__link {
-  color: #d9e5c6;
-}
-
-.dark-mode .app-nav__link:hover {
-  background-color: #262626;
-}
-
-.dark-mode .app-nav__link.router-link-exact-active {
-  background-color: #3a4833;
-  color: #e5f2d7;
-}
-
-
-/* Profile dropdown: Dark mode */
-
-.dark-mode .profile-menu .dropdown {
-  background-color: #171717;
-  color: #f5f5f5;
-  border-color: #404040;
-}
-
-.dark-mode .profile-menu .dropdown-header {
-  border-color: #404040;
-}
-
-.dark-mode .profile-menu .muted {
-  color: #b8b8b8;
-}
-
-.dark-mode .profile-menu .item {
-  color: #f5f5f5;
-}
-
-.dark-mode .profile-menu .item:hover {
-  background-color: #262626;
-}
-
-.dark-mode .profile-menu .logout-dialog {
-  background-color: #262626;
-  color: #f5f5f5;
-}
-
-
-
-

@@ -30,12 +30,13 @@ import User from '../models/User.js';
 import Material from '../models/Material.js';
 import Product from '../models/Product.js';
 import Order from '../models/Order.js';
+import Counter from '../models/Counter.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const daysFromNow = (d) => new Date(Date.now() + d * DAY_MS);
 
 // ---------- History settings ----------
-const HISTORY_DAYS = 84; // 12 weeks of past orders (yesterday back to 84 days ago)
+const HISTORY_DAYS = 100;
 const REPEAT_CUSTOMERS = 24; // generated regulars per seller (on top of the known ones)
 const ONE_OFF_SHARE = 0.22; // share of orders from first-time / one-off customers
 const NOISE = 0.15; // ±15% random day-to-day variation (set 0 for a perfectly clean pattern)
@@ -126,6 +127,9 @@ function makeMessage(platform, desc, delivery, address, dueAt) {
   return templates[platform];
 }
 
+// Finds a variant's ObjectId by its name, so hand-written orders can reference it by ID
+const variantIdOf = (productDoc, name) => productDoc.variants.find((v) => v.name === name)._id;
+
 // ---------- Seller definitions ----------
 // materials: key is local to the seller and used by recipes / extras
 // recentOrders: hand-written orders around "now" (p = map of product key -> saved product doc)
@@ -215,7 +219,7 @@ const SELLERS = [
         customerContact: '@marcus.lim',
         platform: 'instagram',
         items: [
-          { product: p.lavender._id, variant: 'With dried lavender topping', quantity: 1 },
+          { product: p.lavender._id, variantId: variantIdOf(p.lavender, 'With dried lavender topping'), variant: 'With dried lavender topping', quantity: 1 },
           { product: p.vanilla._id, quantity: 2 },
         ],
         price: 57,
@@ -321,7 +325,7 @@ const SELLERS = [
         customerName: 'Daniel Koh',
         customerContact: '@daniel.koh',
         platform: 'tiktok',
-        items: [{ product: p.cookies._id, variant: 'Gluten-free', quantity: 1 }],
+        items: [{ product: p.cookies._id, variantId: variantIdOf(p.cookies, 'Gluten-free'), variant: 'Gluten-free', quantity: 1 }],
         price: 18,
         paymentStatus: 'deposit',
         depositAmount: 5,
@@ -397,7 +401,10 @@ function buildHistoryOrders(sellerId, productDefs, productDocs, knownCustomers =
         createdAt.setHours(9, 0, 0, 0); // same day, earlier (only applies if the schema has timestamps)
 
         const item = { product: doc._id, quantity };
-        if (variant) item.variant = variant.name;
+        if (variant) {
+          item.variantId = variant._id;  // the ObjectId, which is what materialsNeeded and the forecast match on
+          item.variant = variant.name;   // keep the name too, for display
+        }
 
         const order = {
           seller: sellerId,
@@ -449,6 +456,7 @@ async function seed() {
     Order.deleteMany({ seller: { $in: seedUserIds } }),
     Product.deleteMany({ seller: { $in: seedUserIds } }),
     Material.deleteMany({ seller: { $in: seedUserIds } }),
+    Counter.deleteMany({ seller: { $in: seedUserIds } }),
   ]);
   await User.deleteMany({ _id: { $in: seedUserIds } });
   console.log(`Cleared existing data for ${seedUserIds.length} seed user(s)`);
@@ -498,7 +506,11 @@ async function seed() {
     if (history.length < MIN_ORDERS_PER_SELLER) {
       console.warn(`  Warning: ${def.username} only got ${history.length} historical orders (< ${MIN_ORDERS_PER_SELLER})`);
     }
-    await Order.create([...history, ...recent]);
+    // Save one at a time, oldest first, so each day's numbers run -01, -02, ... in order.
+// (Order.create([...]) saves the whole array in parallel, which scrambles the numbering.)
+for (const o of [...history, ...recent]) {
+  await Order.create(o);
+}
 
     totalMaterials += materialDocs.length;
     totalProducts += productDocs.length;

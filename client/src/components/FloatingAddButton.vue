@@ -7,11 +7,13 @@ const route = useRoute();
 const open = ref(false);
 const root = ref(null);
 
-// TODO: change these paths to your real "add" pages
+// Where each menu item goes.
+// Add Material / Add Product are pop-ups inside those pages, so we add ?add=1
+// to the address. The page sees it and opens its own "Add" pop-up.
 const actions = [
   { label: 'Add Order', to: '/orders/new' },
-  { label: 'Add Material', to: '/materials' },
-  { label: 'Add Product', to: '/products' },
+  { label: 'Add Material', to: '/materials?add=1' },
+  { label: 'Add Product', to: '/products?add=1' },
 ];
 
 function toggle() {
