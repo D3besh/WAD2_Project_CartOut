@@ -30,6 +30,7 @@ import User from '../models/User.js';
 import Material from '../models/Material.js';
 import Product from '../models/Product.js';
 import Order from '../models/Order.js';
+import Counter from '../models/Counter.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const daysFromNow = (d) => new Date(Date.now() + d * DAY_MS);
@@ -455,6 +456,7 @@ async function seed() {
     Order.deleteMany({ seller: { $in: seedUserIds } }),
     Product.deleteMany({ seller: { $in: seedUserIds } }),
     Material.deleteMany({ seller: { $in: seedUserIds } }),
+    Counter.deleteMany({ seller: { $in: seedUserIds } }),
   ]);
   await User.deleteMany({ _id: { $in: seedUserIds } });
   console.log(`Cleared existing data for ${seedUserIds.length} seed user(s)`);
@@ -504,7 +506,11 @@ async function seed() {
     if (history.length < MIN_ORDERS_PER_SELLER) {
       console.warn(`  Warning: ${def.username} only got ${history.length} historical orders (< ${MIN_ORDERS_PER_SELLER})`);
     }
-    await Order.create([...history, ...recent]);
+    // Save one at a time, oldest first, so each day's numbers run -01, -02, ... in order.
+// (Order.create([...]) saves the whole array in parallel, which scrambles the numbering.)
+for (const o of [...history, ...recent]) {
+  await Order.create(o);
+}
 
     totalMaterials += materialDocs.length;
     totalProducts += productDocs.length;

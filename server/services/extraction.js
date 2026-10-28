@@ -409,6 +409,23 @@ export async function parseOrder(message, sellerId) {
     problems.push('Enter the deposit amount');
   }
 
+  console.log("Fusejs result: ")
+  console.log({
+    customerName: raw.customerName ?? undefined,
+    customerContact: raw.customerContact ?? undefined,
+    platform,
+    items,
+    price: undefined, // the seller sets this
+    paymentStatus,
+    depositAmount,
+    fulfilmentMethod,
+    deliveryAddress: raw.deliveryAddress ?? undefined,
+    dueAt,
+    rawMessage: message,
+    problems,
+    needsReview: problems.length > 0,
+  });
+
   return {
     customerName: raw.customerName ?? undefined,
     customerContact: raw.customerContact ?? undefined,
