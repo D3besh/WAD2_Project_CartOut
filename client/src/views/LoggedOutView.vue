@@ -16,12 +16,19 @@ const router = useRouter()
 
 <style scoped>
 .logged-out {
-  min-height: 70vh;
+  min-height: 100vh;
+  padding: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.card { text-align: center; max-width: 360px; }
+.card { 
+  text-align: center; 
+  width: 100%;
+  max-width: 400px; 
+  padding: 40px 32px;
+  border-radius: 12px;
+}
 .check {
   width: 56px; height: 56px; margin: 0 auto 1rem;
   border-radius: 50%;
