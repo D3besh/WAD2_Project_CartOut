@@ -37,6 +37,7 @@ const HISTORY_DAYS = 56;  // learn from the last 8 weeks
 const TEST_DAYS = 28;     // check accuracy on the last 4 weeks
 const FORECAST_DAYS = 30; // look 30 days ahead (prof: restocking takes less than a month)
 const SPIKE_RATIO = 1.5;  // a weekday is a "spike" if it uses 1.5× the normal daily average
+const BACKTEST_LAG = 7;   // test as if each forecast was made 7 days before the day it predicts
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -119,7 +120,7 @@ export function learnWeekdayAverages(usageByDay, holidayDates, endDay, weighted)
     if (weightSums[weekday] === 0) {
       return 0;
     }
-    return (totals[weekday][materialId] || 0) / weightSums[weekday];
+    return (totals[weekday][materialId] || 0) / weightSums[weekday]; // weighted usage total / sum of weights
   };
 }
 
@@ -141,16 +142,17 @@ export function backtest(materials, usageByDay, holidayDates, today) {
       continue; // holidays aren't normal days, so don't test on them either
     }
 
-    // Pretend it's the morning of testDay: learn only from the 8 weeks before it
-    let weightedAvg = learnWeekdayAverages(usageByDay, holidayDates, testDay, true);
-    let simpleAvg = learnWeekdayAverages(usageByDay, holidayDates, testDay, false);
+        // Pretend the forecast was made BACKTEST_LAG days before testDay: learn only from the 8 weeks before that
+    let learnEnd = addDays(testDay, -BACKTEST_LAG);
+    let weightedAvg = learnWeekdayAverages(usageByDay, holidayDates, learnEnd, true);
+    let simpleAvg = learnWeekdayAverages(usageByDay, holidayDates, learnEnd, false);
     let wd = weekdayOf(testDay);
     let used = usageByDay[testDay] || {};
 
     for (let m of materials) {
       let id = String(m._id);
       let actual = used[id] || 0;
-      errors[id].weighted += Math.abs(actual - weightedAvg(wd, id));
+      errors[id].weighted += Math.abs(actual - weightedAvg(wd, id)); // only indicates accuracy, not direction
       errors[id].simple += Math.abs(actual - simpleAvg(wd, id));
       errors[id].actual += actual;
       errors[id].days += 1;
@@ -172,6 +174,49 @@ export function backtest(materials, usageByDay, holidayDates, today) {
   }
   return results;
 }
+
+
+export function chooseForecastMethod(results) {
+  let weightedError = 0;
+  let simpleError = 0;
+  let materialCount = 0;
+
+  for (let id in results) {
+    let result = results[id];
+
+    // Skip materials with no usable backtest result
+    // or no average daily usage.
+    if (!result || result.avgDailyUse <= 0) {
+      continue;
+    }
+
+    // Normalise the errors by average daily usage.
+    weightedError +=
+      result.maeWeighted / result.avgDailyUse;
+
+    simpleError +=
+      result.maeSimple / result.avgDailyUse;
+
+    materialCount++;
+  }
+
+  // If there is insufficient data, default to simple.
+  if (materialCount === 0) {
+    return 'simple';
+  }
+
+  weightedError = weightedError / materialCount;
+  simpleError = simpleError / materialCount;
+
+  // Select whichever method has the lower average
+  // normalised error. Ties favour the simpler method.
+  if (weightedError < simpleError) {
+    return 'weighted';
+  }
+
+  return 'simple';
+}
+
 
 // -----------------------------------------------------
 // The algorithm itself. It only does maths on the data it's given
@@ -201,11 +246,17 @@ export function buildForecast(materials, products, pastOrders, upcomingOrders, h
     }
   }
 
-  // ===== STEP 1: LEARN (weighted), using the 8 weeks before today =====
-  let averageOn = learnWeekdayAverages(usageByDay, holidayDates, today, true);
+  // ===== STEP 1: LEARN (dynamic), using the 8 weeks before today =====
+  
+  const bt_results = backtest(materials, usageByDay, holidayDates, today);
+  const selectedMethod = chooseForecastMethod(bt_results);
+  const averageOn = learnWeekdayAverages(usageByDay, holidayDates, today, selectedMethod === 'weighted');
+
+  console.log('Selected material forecast method:', selectedMethod);
+
 
   // ===== Accuracy check on the last 4 weeks =====
-  let accuracyById = backtest(materials, usageByDay, holidayDates, today);
+  let accuracyById = bt_results;
 
   // ===== Orders already booked for the coming days =====
   // e.g. booked["2026-10-17"] = { <oat milk id>: 560 }
@@ -277,14 +328,16 @@ export function buildForecast(materials, products, pastOrders, upcomingOrders, h
     let accuracy = null;
     let a = accuracyById[id];
     if (a && a.avgDailyUse > 0) {
+      let chosenMae = selectedMethod === 'weighted' ? a.maeWeighted : a.maeSimple;
       accuracy = {
         maeWeighted: round1(a.maeWeighted),  // e.g. 180 (g per day)
         maeSimple: round1(a.maeSimple),
         avgDailyUse: round1(a.avgDailyUse),
-        errorPercent: Math.round((a.maeWeighted / a.avgDailyUse) * 100),       // e.g. 15
+        errorPercent: Math.round((chosenMae / a.avgDailyUse) * 100),
+        weightedErrorPercent: Math.round((a.maeWeighted / a.avgDailyUse) * 100),      // e.g. 15
         simpleErrorPercent: Math.round((a.maeSimple / a.avgDailyUse) * 100),   // e.g. 22
       };
-      percentWeighted.push(accuracy.errorPercent);
+      percentWeighted.push(accuracy.weightedErrorPercent);
       percentSimple.push(accuracy.simpleErrorPercent);
     }
 
@@ -312,19 +365,21 @@ export function buildForecast(materials, products, pastOrders, upcomingOrders, h
     let avgSimple = percentSimple.reduce((sum, p) => sum + p, 0) / percentSimple.length;
     accuracy = {
       testDays: TEST_DAYS,
-      errorPercent: Math.round(avgWeighted),        // weighted forecast: ~X% off per day
+      errorPercent: Math.round(selectedMethod === 'weighted' ? avgWeighted : avgSimple),        // weighted forecast: ~X% off per day
       simpleErrorPercent: Math.round(avgSimple),    // simple average: ~Y% off per day
       // how much smaller the weighted error is, e.g. 25 = "25% more accurate"
       improvementPercent: avgSimple > 0 ? Math.round(((avgSimple - avgWeighted) / avgSimple) * 100) : 0,
     };
   }
 
-  return {
+    return {
     today: today,
     forecastDays: FORECAST_DAYS,
-    historyOrderCount: historyOrderCount, // 0 = not enough history to forecast yet
-    accuracy: accuracy,                   // null = not enough history to test yet
+    historyOrderCount: historyOrderCount,
+    accuracy: accuracy,
+    method: selectedMethod,
     materials: results,
+    products: buildProductForecast(products, pastOrders, upcomingOrders, holidayDates, today),
   };
 }
 
@@ -345,13 +400,171 @@ export async function forecastMaterials(sellerId, holidayDates) {
   let pastOrders = await Order.find({
     seller: sellerId,
     status: 'completed',
-    dueAt: { $gte: startOfDay(addDays(today, -(HISTORY_DAYS + TEST_DAYS))), $lt: startOfDay(today) },
+    dueAt: { $gte: startOfDay(addDays(today, -(HISTORY_DAYS + TEST_DAYS + BACKTEST_LAG))), $lt: startOfDay(today) },
   });
 
   let upcomingOrders = await Order.find({
     seller: sellerId,
+    status: { $ne: 'cancelled' },
     dueAt: { $gte: startOfDay(today), $lt: startOfDay(addDays(today, FORECAST_DAYS)) },
   });
 
   return buildForecast(materials, products, pastOrders, upcomingOrders, holidayDates, today);
+}
+
+// -----------------------------------------------------
+// PRODUCT + VARIANT FORECAST
+// Same method as materials: weekday averages, weighted vs simple chosen by backtest.
+// Each product gets one row for its total, plus one row per variant.
+//   key "<productId>"             → all sales of the product
+//   key "<productId>:<variantId>" → sales of that variant only
+// -----------------------------------------------------
+
+// Which variant of this product did the item order? Same rules as materialsNeeded():
+// match by ID first, fall back to name for old orders, otherwise null = Regular.
+function resolveVariantId(item, product) {
+  if (!product) {
+    return null;
+  }
+  let variant = null;
+  if (item.variantId) {
+    variant = product.variants.find((v) => String(v._id) === String(item.variantId));
+  } else if (item.variant) {
+    variant = product.variants.find((v) => v.name === item.variant);
+  }
+  return variant ? String(variant._id) : null;
+}
+
+// What was sold on each day:
+// { "2026-10-10": { <productId>: 40, "<productId>:<variantId>": 12, "<productId>:regular": 28 }, ... }
+function buildSalesByDay(orders, products) {
+  let productById = {};
+  for (let p of products) {
+    productById[String(p._id)] = p;
+  }
+
+  let salesByDay = {};
+  for (let order of orders) {
+    let day = dayKey(order.dueAt);
+    if (!salesByDay[day]) {
+      salesByDay[day] = {};
+    }
+    for (let item of order.items) {
+      let productId = String(item.product);
+      let product = productById[productId];
+      if (!product) {
+        continue; // product was deleted
+      }
+      let qty = Number(item.quantity) || 0;
+      let variantId = resolveVariantId(item, product);
+
+      // product total
+      salesByDay[day][productId] = (salesByDay[day][productId] || 0) + qty;
+
+      // the variant row (or "regular" when no variant was chosen)
+      let vKey = productId + ':' + (variantId || 'regular');
+      salesByDay[day][vKey] = (salesByDay[day][vKey] || 0) + qty;
+    }
+  }
+  return salesByDay;
+}
+
+// One row per product, plus Regular + each variant for products that have variants
+// (archived products are history only, not forecast)
+function buildProductRows(products) {
+  let rows = [];
+  for (let p of products) {
+    if (p.archived) {
+      continue;
+    }
+    let pid = String(p._id);
+    rows.push({ _id: pid, productId: pid, name: p.name, variant: null });
+
+    if (p.variants && p.variants.length > 0) {
+      rows.push({ _id: pid + ':regular', productId: pid, name: p.name + ' (Regular)', variant: 'Regular' });
+      for (let v of p.variants) {
+        rows.push({
+          _id: pid + ':' + String(v._id), // "_id" so backtest() can be reused as-is
+          productId: pid,
+          name: p.name + ' (' + v.name + ')',
+          variant: v.name,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+export function buildProductForecast(products, pastOrders, upcomingOrders, holidayDates, today) {
+  let salesByDay = buildSalesByDay(pastOrders, products);
+  let booked = buildSalesByDay(upcomingOrders, products);
+  let rows = buildProductRows(products);
+
+  // Pick weighted vs simple the same way as for materials (backtest result has avgDailyUse = avg units/day)
+  let bt = backtest(rows, salesByDay, holidayDates, today);
+  let method = chooseForecastMethod(bt);
+  let averageOn = learnWeekdayAverages(salesByDay, holidayDates, today, method === 'weighted');
+
+  let results = [];
+  for (let row of rows) {
+    let id = row._id;
+
+    // Day by day for the next 30 days.
+    // Unlike materials, booked orders are NOT deducted from stock here: we want total demand,
+    // so a day's demand is whichever is higher, the usual pattern or what's already booked.
+    let daily = [];
+    let expectedTotal = 0;
+    let bookedTotal = 0;
+    for (let i = 0; i < FORECAST_DAYS; i++) {
+      let key = addDays(today, i);
+      let usual = averageOn(weekdayOf(key), id);
+      let alreadyBooked = booked[key] ? booked[key][id] || 0 : 0;
+      let expected = Math.max(usual, alreadyBooked);
+
+      daily.push({ date: key, expected: round1(expected), booked: alreadyBooked });
+      expectedTotal += expected;
+      bookedTotal += alreadyBooked;
+    }
+
+    // Typical week + busiest weekday
+    let weekPattern = [];
+    let busiest = null;
+    let busiestAvg = 0;
+    for (let wd = 0; wd < 7; wd++) {
+      let avg = averageOn(wd, id);
+      weekPattern.push({ weekday: WEEKDAYS[wd], average: round1(avg) });
+      if (avg > busiestAvg) {
+        busiestAvg = avg;
+        busiest = WEEKDAYS[wd];
+      }
+    }
+
+    let b = bt[id];
+    let accuracy = null;
+    if (b && b.avgDailyUse > 0) {
+      accuracy = {
+        maeWeighted: round1(b.maeWeighted),
+        maeSimple: round1(b.maeSimple),
+        avgDailyUse: round1(b.avgDailyUse),
+        errorPercent: Math.round((b.maeWeighted / b.avgDailyUse) * 100),
+        simpleErrorPercent: Math.round((b.maeSimple / b.avgDailyUse) * 100),
+      };
+    }
+
+    results.push({
+      id: id,
+      productId: row.productId,
+      name: row.name,
+      variant: row.variant,           // null = the product total
+      expectedUnits: Math.round(expectedTotal),
+      bookedUnits: bookedTotal,
+      busiestDay: busiest,
+      weekPattern: weekPattern,
+      daily: daily,
+      accuracy: accuracy,
+    });
+  }
+
+  console.log("Forecast results:", { method: method, items: results });
+  return { method: method, items: results };
 }
