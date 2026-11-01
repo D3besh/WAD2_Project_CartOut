@@ -633,7 +633,7 @@ onMounted(loadShop);
           </button>
 
           <RouterLink to="/orders/new" class="btn btn-primary text-nowrap">
-            Log order
+            + New Order
           </RouterLink>
         </div>
       </div>
