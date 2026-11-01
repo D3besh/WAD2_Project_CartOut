@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { deductMaterials, restoreMaterials, checkOrder } from '../services/inventory.js';
 import { parseOrder } from '../services/extraction.js';
 import { notifyCustomer } from '../services/notify.js';
+import { buildMessage, messageType } from '../services/messages.js';
+import User from '../models/User.js';
 
 
 const router = Router();
@@ -238,6 +240,28 @@ router.get('/:id', async (req, res, next) => {
 });
 
 
+// GET /api/orders/:id/message
+// The customer message for this order, for the "Copy message" button.
+// Same text as the emails (built in services/messages.js).
+router.get('/:id/message', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order id.' });
+    }
+    const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId })
+      .populate('items.product');
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+    const seller = await User.findById(req.session.userId);
+    const shopName = seller ? seller.shopName : 'CartOut';
+    const message = buildMessage(order, shopName, messageType(order));
+    res.json(message); // { subject, text }
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 // PUT /api/orders/:id
 router.put('/:id', notImplemented);
 
@@ -402,6 +426,7 @@ router.post('/:id/refund', async (req, res, next) => {
     order.refundedAt = new Date();
     await order.save();
     await order.populate('items.product');
+    await notifyCustomer(order, 'refund', amount); // refund confirmation email
     res.json({ order });
   } catch (err) {
     next(err);

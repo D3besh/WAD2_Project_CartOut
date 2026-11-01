@@ -54,7 +54,10 @@ const fulfilmentLabel = computed(() =>
 
     <div class="order-card__head">
       <strong class="order-card__name">{{ order.customerName }}</strong>
-      <span class="order-card__method">{{ fulfilmentLabel }}</span>
+      <span class="order-card__method">
+        {{ fulfilmentLabel }}
+        <span v-if="order.orderNo" class="order-card__no">· {{ order.orderNo }}</span>
+      </span>
     </div>
 
     <p class="order-card__items">{{ itemSummary }}</p>
@@ -109,6 +112,10 @@ const fulfilmentLabel = computed(() =>
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--sk-brand);
+}
+
+.order-card__no {
+  color: var(--sk-muted);
 }
 
 .order-card__items {
