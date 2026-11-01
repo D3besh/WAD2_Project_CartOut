@@ -52,9 +52,11 @@ function amountPaid(order) {
   return 0;
 }
 
-// The 'refund' message is shown for refunded orders, otherwise the stage message.
-// Used by "Copy message" on the order page.
+// Which message "Copy message" shows: the latest thing that happened.
+// A refund always comes before a cancellation, so a cancelled order shows the
+// cancellation message (which also lists any refund).
 export function messageType(order) {
+  if (order.status === 'cancelled') return 'cancelled';
   if (order.refundAmount > 0) return 'refund';
   return order.status;
 }
@@ -300,6 +302,8 @@ function cancelledMessage(order, shopName) {
     'Order total:       ' + money(order.price),
   ];
   if (paid > 0) details.push('Amount paid:       ' + money(paid));
+  // Refunds always happen before the cancellation, so list them here
+  if (order.refundAmount > 0) details.push('Refunded:          ' + money(order.refundAmount));
   if (order.forfeitedAmount > 0) {
     details.push('Deposit retained:  ' + money(order.forfeitedAmount) + ' (non-refundable)');
   }
@@ -307,11 +311,8 @@ function cancelledMessage(order, shopName) {
   details.push('Fulfilment:    ' + fulfilmentName(order));
   if (order.cancelledAt) details.push('Cancelled on:  ' + formatDate(order.cancelledAt));
 
+  // (Refunds can't be made after cancelling, so there is no "refund to follow" line.)
   const closing = [];
-  // Money paid that isn't kept as a deposit may be refunded later
-  if (paid - (order.forfeitedAmount || 0) > 0 && !(order.refundAmount > 0)) {
-    closing.push('Any refund due to you will be confirmed in a separate message.');
-  }
 
   return {
     subject: 'Order cancelled: ' + orderNumber(order),
@@ -348,12 +349,8 @@ function refundMessage(order, shopName, refundNow) {
   details.push('');
   details.push('Fulfilment:    ' + fulfilmentName(order));
 
-  const opening = [];
-  if (order.status === 'cancelled') {
-    opening.push('Following the cancellation of your order, we have processed a refund.');
-  } else {
-    opening.push('We have processed a refund for your order with ' + shopName + '.');
-  }
+  // (Refunds always come before a cancellation, so the order is never cancelled here.)
+  const opening = ['We have processed a refund for your order with ' + shopName + '.'];
   // Everything the customer paid (minus any retained deposit) has now been refunded
   if (paid > 0 && totalRefunded >= paid - (order.forfeitedAmount || 0)) {
     opening.push('Your payment has been refunded in full. The details are below.');

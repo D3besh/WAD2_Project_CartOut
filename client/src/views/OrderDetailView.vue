@@ -27,12 +27,14 @@ const paymentLocked = computed(() => {
   );
 });
 
-// 4th step on the payment tracker, only if it really happened
-const paymentOutcome = computed(() => {
-  if (!order.value) return '';
-  if (order.value.refundAmount > 0) return 'refunded';
-  if (order.value.status === 'cancelled') return 'cancelled';
-  return '';
+// Extra steps on the payment tracker, only if they really happened.
+// A refund always comes before a cancellation, so the order is Refunded → Cancelled.
+const paymentOutcomes = computed(() => {
+  const list = [];
+  if (!order.value) return list;
+  if (order.value.refundAmount > 0) list.push('refunded');
+  if (order.value.status === 'cancelled') list.push('cancelled');
+  return list;
 });
 
 const itemText = computed(() => {
@@ -192,7 +194,7 @@ onMounted(loadOrder);
           :payment-status="order.paymentStatus"
           :deposit-amount="order.depositAmount || 0"
           :price="order.price"
-          :outcome="paymentOutcome"
+          :outcomes="paymentOutcomes"
           :disabled="paymentLocked"
           :saving="saving"
           @update="updatePayment"

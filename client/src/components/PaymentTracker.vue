@@ -3,14 +3,16 @@
 //   - Click Unpaid / Paid → saves straight away.
 //   - Click Deposit → an amount box appears; saves ~0.7s after you stop typing
 //     (or on Enter / clicking away).
-// A 4th step appears only if the money was really refunded or the order cancelled.
+// Extra steps appear only if they really happened, in this order:
+//   Refunded (money given back), then Cancelled (order called off).
+// A refund always comes before a cancellation, never after.
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
   paymentStatus: { type: String, default: 'unpaid' },
   depositAmount: { type: Number, default: 0 },
   price: { type: Number, default: 0 },
-  outcome: { type: String, default: '' }, // '' | 'refunded' | 'cancelled'
+  outcomes: { type: Array, default: () => [] }, // e.g. [], ['refunded'], ['cancelled'], ['refunded', 'cancelled']
   disabled: { type: Boolean, default: false },
   saving: { type: Boolean, default: false },
 });
@@ -30,11 +32,7 @@ let timer = null;
 
 const shownStatus = computed(() => selected.value ?? props.paymentStatus);
 
-const outcomeLabel = computed(() => {
-  if (props.outcome === 'refunded') return 'Refunded';
-  if (props.outcome === 'cancelled') return 'Cancelled';
-  return '';
-});
+const OUTCOME_LABELS = { refunded: 'Refunded', cancelled: 'Cancelled' };
 
 function stateOf(index) {
   const current = stages.findIndex((s) => s.value === shownStatus.value);
@@ -128,13 +126,14 @@ onBeforeUnmount(() => clearTimeout(timer));
       </button>
 
       <div
-        v-if="outcomeLabel"
+        v-for="outcome in outcomes"
+        :key="outcome"
         class="step step--outcome"
         :class="outcome === 'refunded' ? 'is-refunded' : 'is-cancelled'"
         :data-testid="`pay-${outcome}`"
       >
         <span class="dot">{{ outcome === 'refunded' ? '↩' : '✕' }}</span>
-        <span class="label">{{ outcomeLabel }}</span>
+        <span class="label">{{ OUTCOME_LABELS[outcome] }}</span>
       </div>
     </div>
 
@@ -184,12 +183,16 @@ onBeforeUnmount(() => clearTimeout(timer));
   font-family: inherit;
 }
 
+/* connecting line, drawn from the previous dot to this one.
+   It starts and stops at the edge of the dots (19px = half a dot,
+   + 4px for the ring around the active dot), so it never crosses a dot,
+   even when the tracker is faded out (locked). */
 .step:not(:first-child)::before {
   content: '';
   position: absolute;
   top: 18px;
-  right: 50%;
-  width: 100%;
+  left: calc(-50% + 23px);
+  right: calc(50% + 23px);
   height: 3px;
   background: var(--sk-border);
   z-index: 0;
@@ -267,7 +270,7 @@ onBeforeUnmount(() => clearTimeout(timer));
   margin-bottom: 0.25rem;
 }
 
-/* 4th step (display only) */
+/* Refunded / Cancelled steps (display only) */
 .step--outcome {
   cursor: default;
 }

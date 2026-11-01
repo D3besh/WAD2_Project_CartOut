@@ -380,8 +380,9 @@ router.post('/:id/cancel', async (req, res, next) => {
     order.materialsWasted = used;
 
 
+    // Keep what's left of the deposit (any part already refunded is not kept)
     if (forfeit && order.paymentStatus === 'deposit') {
-      order.forfeitedAmount = order.depositAmount;
+      order.forfeitedAmount = Math.max(0, order.depositAmount - order.refundAmount);
     }
 
 
@@ -413,6 +414,11 @@ router.post('/:id/refund', async (req, res, next) => {
 
     const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId });
     if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+    // Refund first, then cancel: a cancelled order can't be refunded
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ message: 'Cancelled orders cannot be refunded. Refund before cancelling.' });
+    }
 
 
     const refundable = amountPaid(order) - order.refundAmount - order.forfeitedAmount;

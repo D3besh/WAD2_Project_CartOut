@@ -80,8 +80,8 @@ function stateOf(index) {
   content: '';
   position: absolute;
   top: 18px;
-  right: 50%;
-  width: 100%;
+  left: calc(-50% + 23px);
+  right: calc(50% + 23px);
   height: 3px;
   background: var(--sk-border);
   z-index: 0;
