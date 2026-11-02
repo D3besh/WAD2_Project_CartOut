@@ -111,13 +111,12 @@ router.post('/logout', async (req, res) => {
 // The front end calls this to decide whether to show the login page.
 router.get('/me', requireAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).lean();
-    if (!user) return res.status(401).json({ message: 'User not found' });
-
+    const user = await User.findById(req.session.userId);
+    if (!user) return res.status(401).json({ message: 'Not logged in' });
     res.json(user);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Server error.' });
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

@@ -6,3 +6,9 @@ playwright-report/
 .DS_Store
 pnpm-lock.yaml
 pnpm-workspace.yaml
+
+# Playwright
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
