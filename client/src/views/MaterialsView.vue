@@ -50,6 +50,10 @@ const page = ref(1);
 // (after something here changes the stock, e.g. a restock from a card).
 const panelKey = ref(0);
 
+// "What to buy →" on Products / Home links here with ?highlight=<material id>,
+// so that material stands out in the "What to buy" list
+const highlightId = ref(null);
+
 // =====================================================
 // 2. LOAD MATERIALS FROM THE SERVER
 // =====================================================
@@ -93,7 +97,18 @@ async function refreshEverything() {
 onMounted(() => {
   reloadAll();
   openFormFromLink(); // opened from the floating "+" button?
+  highlightFromLink(); // opened from "What to buy →"?
 });
+
+// Remember which material to highlight, then tidy the address
+// (same idea as ?add=1 below)
+function highlightFromLink() {
+  if (route.query.highlight) {
+    highlightId.value = route.query.highlight;
+    router.replace({ query: {} });
+  }
+}
+watch(() => route.query.highlight, highlightFromLink);
 
 // The floating "+" button links here with ?add=1 (e.g. /materials?add=1).
 // When we see it, open the Add pop-up, then remove ?add=1 from the address
@@ -405,7 +420,7 @@ async function afterPanelRestock(names) {
 
       <!-- ===== What to buy (loads its own data; :key makes it reload) ===== -->
       <div class="mat-layout__side">
-        <WhatToBuyPanel :key="panelKey" @restocked="afterPanelRestock" />
+        <WhatToBuyPanel :key="panelKey" :highlight="highlightId" @restocked="afterPanelRestock" />
       </div>
     </div>
 

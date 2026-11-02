@@ -1,31 +1,30 @@
 <script setup>
 // "Needs your attention" card for the Home page: coloured rows, each with an optional button.
 // It loads its own data and works out the forecast rows itself:
-//   ⚠️ Short 3 Banana bread tomorrow        [Restock]       → opens the Restock pop-up
-//   ✅ Enough stock for tomorrow             [Check]         → goes to Products
-//   🛒 3 materials to buy this week          [Restock all]   → opens the Restock pop-up
+//   ⚠️ Short 3 Banana bread tomorrow        [What to buy]   → Materials, Bananas highlighted
+//   ✅ Enough stock for tomorrow             [Check]         → Products
+//   🛒 3 materials to buy this week          [See list]      → Materials
 //   🔥 Friday is your busiest day
+// (Buying is done in one place, the "What to buy" list on the Materials page.)
 //
 // Usage:
-//   <AttentionList :extra-items="overdueRows" @act="onMyRow" @restocked="refreshKey++" />
+//   <AttentionList :extra-items="overdueRows" @act="onMyRow" />
 //
 // extra-items (optional) = your own rows, shown first, e.g. overdue orders:
 //   [{ key: 'overdue', tone: 'red', icon: '⏰', title: '1 order is overdue',
 //      text: 'Shar · due yesterday, 2:53 pm', actionLabel: 'View', primary: false }]
 //   tone: 'red' | 'amber' | 'purple' | 'green'. Leave actionLabel out for no button.
-// @act       → sends the key of YOUR row whose button was clicked (e.g. 'overdue')
-// @restocked → after the Restock pop-up saves, with the names restocked, e.g. ['Flour']
+// @act → sends the key of YOUR row whose button was clicked (e.g. 'overdue')
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
-import RestockModal from './RestockModal.vue';
-import { forecastAttentionItems, restockRowFor, restockPlanFor } from '../../utils/forecast.js';
+import { forecastAttentionItems } from '../../utils/forecast.js';
 
 const props = defineProps({
   extraItems: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(['act', 'restocked']);
+const emit = defineEmits(['act']);
 const router = useRouter();
 
 // =====================================================
@@ -63,24 +62,17 @@ const rows = computed(() => [
 // =====================================================
 // BUTTONS
 // =====================================================
-const restockRows = ref(null); // the Restock pop-up's rows (null = closed)
-
 function onButton(key) {
   if (key.startsWith('short:')) {
-    let row = restockRowFor(forecast.value, key.slice('short:'.length));
-    if (row) restockRows.value = [row];
+    // Materials page, with this material highlighted in "What to buy"
+    router.push({ path: '/materials', query: { highlight: key.slice('short:'.length) } });
   } else if (key === 'restock-week') {
-    restockRows.value = restockPlanFor(forecast.value, 7);
+    router.push('/materials');
   } else if (key === 'all-good') {
     router.push('/products');
   } else {
     emit('act', key); // one of the page's own rows
   }
-}
-
-async function afterRestock(names) {
-  await loadData(); // the rows change once stock has gone up
-  emit('restocked', names);
 }
 </script>
 
@@ -108,8 +100,6 @@ async function afterRestock(names) {
         {{ item.actionLabel }}
       </button>
     </div>
-
-    <RestockModal v-if="restockRows" :rows="restockRows" @close="restockRows = null" @saved="afterRestock" />
   </section>
 </template>
 
