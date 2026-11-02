@@ -90,6 +90,11 @@ function formatTime(minutes) {
   return '~' + Math.round(minutes / 30) / 2 + ' h'; // rounded to the nearest half hour
 }
 
+// 1 → "1 item", 8 → "8 items" (an item = one of what you sell, e.g. one box of cookies)
+function itemsText(count) {
+  return count === 1 ? '1 item' : count + ' items';
+}
+
 // How many of one product/variant can be made with today's stock
 function canMakeOf(product, variant) {
   return calculateCanMake(fullRecipe(product, variant), materials.value).canMake;
@@ -490,7 +495,7 @@ function pillClass(r) {
           <span class="fc-tile__icon is-purple" aria-hidden="true">📦</span>
           <div>
             <div class="fc-tile__label">This week</div>
-            <div class="fc-tile__value">{{ weekOrders }} ordered</div>
+            <div class="fc-tile__value">{{ itemsText(weekOrders) }} ordered</div>
             <div class="fc-tile__sub">+ ~{{ weekExtra }} more expected</div>
           </div>
         </div>
@@ -543,10 +548,10 @@ function pillClass(r) {
         <!-- ===== Each day this week ===== -->
         <section class="sk-card fc-card fc-card--orders mb-3">
           <InfoTip label="How the day cards work">
-            <strong>Dark</strong> = items already in your Order log, due that day.<br />
-            <strong>Light</strong> = how many <strong>more</strong> usually come in for that weekday, learned from
-            your last 8 weeks (recent weeks count more).<br />
-            <strong>Time</strong> = all those items × each product's "time to make".
+            <strong>Dark</strong> = items ordered, due that day.<br />
+            <strong>Light</strong> = extra items you usually get on that day of the week.<br />
+            <strong>⏱</strong> = estimated time to make all items.<br />
+            An item is one of what you sell, e.g. one box of cookies.
           </InfoTip>
           <h2 class="fc-card__title">Each day this week</h2>
           <p class="fc-card__hint">Click a day to see it below</p>
@@ -569,7 +574,7 @@ function pillClass(r) {
                 <span class="wk-bars__orders" :style="{ height: barHeight(day.orders) + 'px' }"></span>
               </span>
 
-              <span class="wk-day__nums"><strong>{{ day.orders }}</strong> ordered<br />+ ~{{ day.extra }} more</span>
+              <span class="wk-day__nums"><strong>{{ itemsText(day.orders) }}</strong> ordered<br />+ ~{{ day.extra }} more expected</span>
               <span class="wk-day__time" :class="{ 'is-busy': isBusiest(day) }">⏱ {{ formatTime(day.minutes) }}</span>
               <span v-if="isBusiest(day)" class="wk-tag wk-tag--busy">Busiest</span>
               <span v-if="day.holiday" class="wk-tag wk-tag--holiday">Public holiday*</span>
@@ -577,8 +582,8 @@ function pillClass(r) {
           </div>
 
           <p class="inv-meta mt-2 mb-0">
-            <span class="fc-key fc-key--orders"></span>Already ordered
-            <span class="fc-key fc-key--extra ms-3"></span>Expected more
+            <span class="fc-key fc-key--orders"></span>Items already ordered
+            <span class="fc-key fc-key--extra ms-3"></span>Items expected
             <template v-if="weekDays.some((d) => d.holiday)">
               · *On public holidays, orders may be higher or lower than usual.
             </template>
@@ -589,13 +594,12 @@ function pillClass(r) {
         <section class="sk-card fc-card fc-card--orders mb-3">
           <InfoTip label="How this table works">
             <template v-if="showCanMake">
-              <strong>Can make now</strong> is worked out from today's stock. Orders you've logged already had their
-              materials taken out, so we only check it against the <strong>expected more</strong>.
+              <strong>Can make now</strong> tells you if your stock is enough for the extra items you'll
+              probably get. (Ingredients for orders you've already added are set aside.)
             </template>
             <template v-else>
-              <strong>Can make now</strong> is only shown for tomorrow, because your stock will change before then.
+              <strong>Can make now</strong> only shows for tomorrow, because your stock will change before then.
             </template>
-            <br /><strong>Time</strong> = items × "time to make".
           </InfoTip>
           <h2 class="fc-card__title">{{ formatDay(selectedDate) }}</h2>
           <p class="fc-card__hint">What to make<template v-if="showCanMake">, and whether you have enough</template></p>
@@ -607,7 +611,7 @@ function pillClass(r) {
               <thead>
                 <tr>
                   <th scope="col">Product</th>
-                  <th scope="col">Ordered</th>
+                  <th scope="col">Items ordered</th>
                   <th scope="col">Expected more</th>
                   <th v-if="showCanMake" scope="col">Can make now</th>
                   <th scope="col">Time</th>
@@ -642,7 +646,7 @@ function pillClass(r) {
           </div>
 
           <p v-if="missingTime.length > 0" class="fc-note">
-            Not in the time: {{ missingTime.join(', ') }} (no "time to make" set).
+            ⏱ doesn't include {{ missingTime.join(', ') }} (no making time set yet).
           </p>
         </section>
 
@@ -654,9 +658,10 @@ function pillClass(r) {
 
         <section v-if="showDetails" class="sk-card fc-card fc-card--orders mt-3">
           <InfoTip label="How the 30-day chart works">
-            Each bar is one day or one week. <strong>Dark</strong> = already ordered,
-            <strong>light</strong> = expected more, based on your usual sales for each weekday.
-            Click a product in the table to show it in the chart and open its variants.
+            Each bar is one day or one week.<br />
+            <strong>Dark</strong> = items already ordered. <strong>Light</strong> = extra items you'll probably get,
+            based on your usual sales.<br />
+            Click a product in the table to see its chart and variants.
           </InfoTip>
           <p v-if="productItems.length === 0" class="inv-meta">No products to forecast yet.</p>
 
@@ -690,6 +695,12 @@ function pillClass(r) {
                 <text v-if="bar.label" class="fc-chart__label" :x="bar.centre" :y="CHART_H - 10" text-anchor="middle">{{ bar.label }}</text>
               </g>
             </svg>
+
+            <!-- Legend: same words and colours as the day cards -->
+            <p class="inv-meta mt-2 mb-0">
+              <span class="fc-key fc-key--orders"></span>Items already ordered
+              <span class="fc-key fc-key--extra ms-3"></span>Items expected
+            </p>
 
             <div class="table-responsive mt-3">
               <table class="fc-table">
@@ -736,9 +747,8 @@ function pillClass(r) {
       <div v-if="activeTab === 'materials'" role="tabpanel">
         <section class="sk-card fc-card fc-card--materials">
           <InfoTip label="How the restock plan works">
-            <strong>Low in 3 days</strong> = the day this material is expected to drop below your low-stock level,
-            if sales follow your usual weekly pattern.<br />
-            <strong>Buy</strong> = enough for the next 30 days, so you stay above that level.<br />
+            When each material will run low, if sales stay as usual.<br />
+            <strong>Buy</strong> = enough to last you a month.<br />
             <span class="info-dot is-now"></span>Low now / today
             <span class="info-dot is-soon"></span>≤ 3 days
             <span class="info-dot is-week"></span>this week

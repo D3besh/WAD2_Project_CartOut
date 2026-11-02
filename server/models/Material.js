@@ -12,7 +12,7 @@ const materialSchema = new mongoose.Schema(
   {
     seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     name: { type: String, required: [true, 'Name is required'], trim: true, maxlength: 60 },
-    unit: { type: String, enum: ['g', 'ml', 'pieces'], default: 'pieces' },
+    unit: { type: String, enum: ['g', 'ml', 'pieces', 'cm'], default: 'pieces' },
     trackingMode: { type: String, enum: ['quantity', 'level'], required: true },
 
     // Each field is only required in its own mode.

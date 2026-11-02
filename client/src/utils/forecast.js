@@ -30,8 +30,14 @@ export function weekdayName(key) {
   return date.toLocaleDateString('en-SG', { weekday: 'long' });
 }
 
-// Amounts in a unit people buy in: 30750 g → "31 kg", 2500 ml → "2.5 L", 12 pieces → "12 pieces"
+// Amounts in a unit people buy in: 30750 g → "31 kg", 2500 ml → "2.5 L", 350 cm → "3.5 m", 12 pieces → "12 pieces"
 export function formatAmount(amount, unit) {
+  if (unit === 'cm' && amount >= 100) {
+    let metres = amount / 100;
+    // 10 m and above: whole number. Below 10: one decimal, e.g. 3.5
+    let shown = metres >= 10 ? Math.round(metres) : Math.round(metres * 10) / 10;
+    return shown + ' m';
+  }
   if ((unit === 'g' || unit === 'ml') && amount >= 1000) {
     let big = amount / 1000;
     let bigUnit = unit === 'g' ? 'kg' : 'L';
