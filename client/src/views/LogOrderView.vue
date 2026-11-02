@@ -216,27 +216,15 @@ const autoFillForm = async () => {
     // Items
     
     // Items
+    // Items
     if (data.items?.length > 0) {
-      form.items = data.items.map(item => {
-        const line = {
-          product: item.product ?? '',
-          variantId: null,
-          quantity: item.quantity ?? 1
-        };
-
-        // Match the AI-detected variant name to its MongoDB ID (or Regular).
-        line.variantId = matchVariant(line, item.variant);
-
-        // Only flag a variant if one was specified but couldn't be matched.
-        if (variantNotMatched(item.variant, line.variantId)) {
-          detectionProblems.value.push(
-            `Could not match variant "${item.variant}" for "${item.matchedName ?? item.requestedName ?? 'this product'}", so it was set to Regular. Please check it.`
-          );
-        }
-
-        return line;
-      });
-
+      form.items = data.items.map(item => ({
+        product: item.product ?? '',
+        variantId: item.variantId ?? null,
+        quantity: item.quantity ?? 1
+      }));
+    
+      
       filledFields.value.push('Items');
 
       // Variant is optional: anything not stated or not matched becomes Regular.
