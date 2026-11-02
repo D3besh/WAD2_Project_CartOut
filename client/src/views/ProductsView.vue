@@ -4,9 +4,10 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard.vue';
 import ActionBanner from '../components/ActionBanner.vue';
+import Pager from '../components/Pager.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
 import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
-import { formatDay, dayForecast } from '../utils/forecast.js';
+import { dayForecast } from '../utils/forecast.js';
 
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
@@ -19,6 +20,10 @@ const materials = ref([]);        // all materials (needed for recipes and "can 
 const banner = ref(null);         // message under the navbar, e.g. { type: 'success', text: 'Brownies added' }
 const search = ref('');
 const forecast = ref(null);       // the 30-day forecast from the server (null = not loaded)
+
+// Paging: 12 cards per page
+const PER_PAGE = 12;
+const page = ref(1);
 
 // Add / Edit pop-up
 const showForm = ref(false);
@@ -137,24 +142,6 @@ const productCards = computed(() => {
   return list;
 });
 
-// Every product/variant that cannot be made right now (for the warning banner)
-const cannotMake = computed(() => {
-  let names = [];
-  for (let item of productCards.value) {
-    for (let row of item.rows) {
-      if (row.canMake === 0) {
-        let fullName = item.product.name;
-        // Only add "(Regular)" / "(Oat milk)" when the product has variants
-        if (item.product.variants.length > 0) {
-          fullName = fullName + ' (' + row.name + ')';
-        }
-        names.push(fullName + ' — out of ' + row.limitedBy);
-      }
-    }
-  }
-  return names;
-});
-
 // Tomorrow's forecast for one row: { orders, extra }, or null if there's no forecast yet
 function tomorrowFor(rowId) {
   if (forecast.value === null) {
@@ -168,46 +155,23 @@ function itemsText(count) {
   return count === 1 ? '1 item' : count + ' items';
 }
 
-// Tomorrow's date, e.g. "Sat, 24 Oct"
-const tomorrowLabel = computed(() => {
-  if (forecast.value === null) {
-    return '';
-  }
-  let items = forecast.value.products.items;
-  if (items.length === 0) {
-    return '';
-  }
-  return formatDay(items[0].daily[1].date);
+// Only the 12 cards on the current page
+const pagedCards = computed(() => {
+  let start = (page.value - 1) * PER_PAGE;
+  return productCards.value.slice(start, start + PER_PAGE);
 });
 
-// Products/variants we may not have enough of tomorrow (for the banner).
-// Orders already logged had their materials taken out of stock when they were logged,
-// so "can make" is what's left AFTER those orders. We only need to cover the EXTRA expected.
-//   short = extra expected − can make
-const shortTomorrow = computed(() => {
-  let list = [];
-  for (let item of productCards.value) {
-    for (let row of item.rows) {
-      if (row.tomorrow === null || row.canMake === null) {
-        continue; // no forecast, or no recipe to count with
-      }
-      let short = row.tomorrow.extra - row.canMake;
-      if (short > 0) {
-        let fullName = item.product.name;
-        if (item.product.variants.length > 0) {
-          fullName = fullName + ' (' + row.name + ')';
-        }
-        list.push({
-          name: fullName,
-          orders: row.tomorrow.orders,
-          extra: row.tomorrow.extra,
-          canMake: row.canMake,
-          short: short,
-        });
-      }
-    }
+// Back to page 1 when the search changes
+watch(search, () => {
+  page.value = 1;
+});
+
+// After deleting the last card on the last page, step back a page
+watch(productCards, (list) => {
+  let lastPage = Math.max(1, Math.ceil(list.length / PER_PAGE));
+  if (page.value > lastPage) {
+    page.value = lastPage;
   }
-  return list;
 });
 
 // Colour class of the "can make" number (the classes are in inventory.css)
@@ -406,7 +370,7 @@ async function deleteProduct() {
     <header class="page-header">
       <div>
         <h1>Products</h1>
-        <p>How many you can make with your current stock</p>
+        <p>How many you can make, and what tomorrow needs</p>
       </div>
       <button type="button" class="btn btn-primary" @click="openAddForm">+ Add product</button>
     </header>
@@ -414,35 +378,8 @@ async function deleteProduct() {
     <!-- ===== What just happened (sticks under the navbar) ===== -->
     <ActionBanner :message="banner" @close="banner = null" />
 
-    <!-- ===== Warning: products/variants that can't be made ===== -->
-    <div v-if="cannotMake.length > 0" class="inv-banner inv-banner--warn mb-3">
-      <div>
-        <p class="inv-banner__title">⚠️ Can't make right now</p>
-        <ul>
-          <li v-for="name in cannotMake" :key="name">{{ name }}</li>
-        </ul>
-      </div>
-    </div>
-
-    <!-- ===== Tomorrow: products we may not have enough of ===== -->
-    <div v-if="shortTomorrow.length > 0" class="inv-banner inv-banner--warn mb-3">
-      <div>
-        <p class="inv-banner__title">
-          📈 Tomorrow ({{ tomorrowLabel }}) you may not have enough for {{ shortTomorrow.length }} product(s)
-        </p>
-        <ul>
-          <li v-for="s in shortTomorrow" :key="s.name">
-            <strong>{{ s.name }}</strong>:
-            {{ itemsText(s.orders) }} ordered + ~{{ s.extra }} expected, you can make {{ s.canMake }} more
-            → <strong>short by {{ s.short }}</strong>
-          </li>
-        </ul>
-      </div>
-      <RouterLink to="/forecast" class="fc-link align-self-end">See full forecast →</RouterLink>
-    </div>
-
     <!-- ===== Search ===== -->
-    <div class="sk-card inv-toolbar mb-4">
+    <div class="sk-card inv-toolbar mb-3">
       <span class="inv-meta">{{ productCards.length }} product(s)</span>
       <input
         id="product-search"
@@ -453,10 +390,10 @@ async function deleteProduct() {
       />
     </div>
 
-    <!-- ===== Product cards ===== -->
-    <TransitionGroup v-if="productCards.length > 0" name="list" tag="div" class="sk-grid inv-grid-top">
+    <!-- ===== Product cards (12 per page, 4 per row on a wide screen) ===== -->
+    <TransitionGroup v-if="productCards.length > 0" name="list" tag="div" class="prod-grid inv-grid-top">
       <ProductCard
-        v-for="item in productCards"
+        v-for="item in pagedCards"
         :key="item.product.id"
         :product="item.product"
         @edit="openEditForm"
@@ -491,6 +428,8 @@ async function deleteProduct() {
       <template v-if="products.length === 0">No products yet. Add one and give it a recipe to see how many you can make.</template>
       <template v-else>No products match.</template>
     </div>
+
+    <Pager v-model="page" :total="productCards.length" :per-page="PER_PAGE" item-name="products" />
 
     <!-- ===================================================== -->
     <!-- POP-UP: Add / Edit product                             -->
@@ -619,3 +558,22 @@ async function deleteProduct() {
 
   </div>
 </template>
+
+<style scoped>
+/* 4 product cards per row on a wide screen; each card keeps its own height */
+.prod-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+  align-items: start;
+}
+@media (max-width: 1199.98px) {
+  .prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 767.98px) {
+  .prod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 479.98px) {
+  .prod-grid { grid-template-columns: 1fr; }
+}
+</style>
