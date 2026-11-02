@@ -13,7 +13,7 @@ const status = ref('in-progress');
 const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
-const message = ref('');
+const message = ref(''); // customer message for "Copy message", built by the server
 
 const isCancelled = computed(() => order.value?.status === 'cancelled');
 
@@ -27,12 +27,14 @@ const paymentLocked = computed(() => {
   );
 });
 
-// 4th step on the payment tracker, only if it really happened
-const paymentOutcome = computed(() => {
-  if (!order.value) return '';
-  if (order.value.refundAmount > 0) return 'refunded';
-  if (order.value.status === 'cancelled') return 'cancelled';
-  return '';
+// Extra steps on the payment tracker, only if they really happened.
+// A refund always comes before a cancellation, so the order is Refunded → Cancelled.
+const paymentOutcomes = computed(() => {
+  const list = [];
+  if (!order.value) return list;
+  if (order.value.refundAmount > 0) list.push('refunded');
+  if (order.value.status === 'cancelled') list.push('cancelled');
+  return list;
 });
 
 const itemText = computed(() => {
@@ -59,28 +61,16 @@ const itemText = computed(() => {
   return parts.join(', ');
 });
 
-const generated = computed(() => {
-  if (!order.value) return '';
-
-  const name = order.value.customerName;
-  const how = order.value.fulfilmentMethod === 'delivery' ? 'delivering to you' : 'ready for you to collect';
-
-  if (status.value === 'cancelled') {
-    return `Hi ${name}, your order of ${itemText.value} has been cancelled. Please reach out if you have any questions.`;
+// Gets the customer message for the order's current stage from the server,
+// so "Copy message" uses exactly the same text as the emails.
+async function fetchMessage() {
+  try {
+    const response = await axios.get(`/api/orders/${route.params.id}/message`);
+    message.value = response.data.text;
+  } catch (err) {
+    message.value = ''; // the rest of the page still works without it
   }
-  if (status.value === 'ready') {
-    return `Hi ${name}! Your order of ${itemText.value} is ready 🎉 We are ${how}. Thank you for your support!`;
-  }
-  if (status.value === 'completed') {
-    return `Hi ${name}! Thanks for your order of ${itemText.value}. Hope you enjoy it! 😊`;
-  }
-  return `Hi ${name}! Thanks for your order of ${itemText.value}. We're working on it now 😊`;
-});
-
-const shown = computed({
-  get: () => message.value || generated.value,
-  set: (v) => (message.value = v),
-});
+}
 
 async function loadOrder() {
   loading.value = true;
@@ -90,6 +80,7 @@ async function loadOrder() {
     const response = await axios.get(`/api/orders/${route.params.id}`);
     order.value = response.data;
     status.value = response.data.status;
+    fetchMessage();
   } catch (err) {
     error.value = err.response?.data?.message || 'Could not load order.';
   } finally {
@@ -100,7 +91,6 @@ async function loadOrder() {
 async function changeStatus(newStatus) {
   const previous = status.value;
   status.value = newStatus;
-  message.value = ''; // use a fresh generated message for the new stage
   saving.value = true;
   error.value = '';
 
@@ -110,6 +100,7 @@ async function changeStatus(newStatus) {
     });
 
     order.value = response.data.order;
+    fetchMessage(); // message for the new stage
   } catch (err) {
     status.value = previous; // undo if saving failed
     error.value = err.response?.data?.message || 'Could not update status.';
@@ -125,6 +116,7 @@ async function updatePayment(payload) {
   try {
     const response = await axios.patch(`/api/orders/${route.params.id}/payment`, payload);
     order.value = response.data.order;
+    fetchMessage(); // payment lines in the message changed
   } catch (err) {
     error.value = err.response?.data?.message || 'Could not update payment.';
   } finally {
@@ -140,7 +132,7 @@ async function cancelOrder(payload) {
     const response = await axios.post(`/api/orders/${route.params.id}/cancel`, payload);
     order.value = response.data.order;
     status.value = response.data.order.status;
-    message.value = '';
+    fetchMessage();
   } catch (err) {
     error.value = err.response?.data?.message || 'Could not cancel order.';
   } finally {
@@ -155,6 +147,7 @@ async function refundOrder(payload) {
   try {
     const response = await axios.post(`/api/orders/${route.params.id}/refund`, payload);
     order.value = response.data.order;
+    fetchMessage(); // now shows the refund message
   } catch (err) {
     error.value = err.response?.data?.message || 'Could not refund order.';
   } finally {
@@ -178,6 +171,7 @@ onMounted(loadOrder);
       <header class="page-header mt-2">
         <div>
           <h1>{{ order.customerName }}</h1>
+          <p v-if="order.orderNo" class="small text-muted mb-1">{{ order.orderNo }}</p>
           <p>{{ itemText }} · ${{ order.price }} · {{ order.fulfilmentMethod }}</p>
         </div>
       </header>
@@ -200,7 +194,7 @@ onMounted(loadOrder);
           :payment-status="order.paymentStatus"
           :deposit-amount="order.depositAmount || 0"
           :price="order.price"
-          :outcome="paymentOutcome"
+          :outcomes="paymentOutcomes"
           :disabled="paymentLocked"
           :saving="saving"
           @update="updatePayment"
@@ -219,7 +213,7 @@ onMounted(loadOrder);
         Email updates are sent automatically to {{ order.customerEmail }}.
       </p>
 
-      <ShareMessage v-model:message="shown" />
+      <ShareMessage :message="message" />
     </template>
   </div>
 </template>

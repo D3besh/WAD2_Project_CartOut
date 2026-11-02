@@ -12,6 +12,11 @@ const error = ref('');
 const statusFilter = ref('in-progress'); // in-progress | ready | completed | refunded | cancelled
 const paymentFilter = ref('all'); // all | paid | deposit | unpaid
 const dueSort = ref('nearest');   // nearest | farthest
+const search = ref('');           // order number or customer name typed in the search bar
+
+
+// True while something is typed in the search bar
+const isSearching = computed(() => search.value.trim() !== '');
 
 
 // ---- Bulk update ----
@@ -38,8 +43,11 @@ async function fetchOrders() {
   try {
     // In progress, Ready and Completed filter by stage.
     // Refunded and Cancelled use the server's "outcome" filter instead.
+    // While searching, load ALL orders so the order is found whatever its status.
     let params;
-    if (statusFilter.value === 'refunded' || statusFilter.value === 'cancelled') {
+    if (isSearching.value) {
+      params = {};
+    } else if (statusFilter.value === 'refunded' || statusFilter.value === 'cancelled') {
       params = { outcome: statusFilter.value };
     } else {
       params = { status: statusFilter.value };
@@ -59,12 +67,26 @@ async function fetchOrders() {
 }
 
 
-// filter by payment status, then sort by due date
+// True if the order number or customer name contains what was typed,
+// e.g. "261028-03", "ord-261028" or "priya". Capital letters don't matter.
+function matchesSearch(order) {
+  const text = search.value.trim().toLowerCase();
+  const orderNo = (order.orderNo || '').toLowerCase();
+  const name = (order.customerName || '').toLowerCase();
+  return orderNo.includes(text) || name.includes(text);
+}
+
+
+// When searching: only the matching orders (filters are ignored).
+// Otherwise: filter by payment status.
+// Then sort by due date.
 const visibleOrders = computed(() => {
   let list = orders.value;
 
 
-  if (paymentFilter.value !== 'all') {
+  if (isSearching.value) {
+    list = list.filter(matchesSearch);
+  } else if (paymentFilter.value !== 'all') {
     list = list.filter((o) => (o.paymentStatus ?? 'unpaid') === paymentFilter.value);
   }
 
@@ -80,7 +102,8 @@ const hasChanges = computed(
   () =>
     statusFilter.value !== 'in-progress' ||
     paymentFilter.value !== 'all' ||
-    dueSort.value !== 'nearest'
+    dueSort.value !== 'nearest' ||
+    search.value !== ''
 );
 
 
@@ -88,17 +111,25 @@ function clearFilters() {
   statusFilter.value = 'in-progress';
   paymentFilter.value = 'all';
   dueSort.value = 'nearest';
+  search.value = '';
 }
 
 
 // ---- Bulk update ----
 
 // Cancelled orders can't change stage, so there is nothing to bulk update there
-const canSelect = computed(() => statusFilter.value !== 'cancelled' && visibleOrders.value.length > 0);
+// (While searching, cancelled orders may be in the results; the server skips them.)
+const canSelect = computed(
+  () => (isSearching.value || statusFilter.value !== 'cancelled') && visibleOrders.value.length > 0
+);
 
 
 // Stage buttons to show: hide the stage the orders are already in
-const stageButtons = computed(() => STAGES.filter((s) => s.value !== statusFilter.value));
+// (While searching, the results can be in any stage, so show all three.)
+const stageButtons = computed(() => {
+  if (isSearching.value) return STAGES;
+  return STAGES.filter((s) => s.value !== statusFilter.value);
+});
 
 
 const allSelected = computed(
@@ -179,12 +210,14 @@ async function bulkUpdate(newStatus, label) {
 
 onMounted(fetchOrders);
 watch(statusFilter, fetchOrders);
+// Reload only when searching starts or stops, not on every key typed
+watch(isSearching, fetchOrders);
 
 
 // Changing a filter changes which orders are shown, so start the selection again
-watch([statusFilter, paymentFilter], () => {
+watch([statusFilter, paymentFilter, search], () => {
   selectedIds.value = [];
-  if (statusFilter.value === 'cancelled') selecting.value = false;
+  if (statusFilter.value === 'cancelled' && !isSearching.value) selecting.value = false;
 });
 </script>
 
@@ -210,12 +243,13 @@ watch([statusFilter, paymentFilter], () => {
 
     <div
       class="sk-card mb-4"
-      style="display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; padding: 0.85rem 1.15rem;"
+      style="display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 0.85rem 1.15rem;"
     >
       <div style="display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap;">
         <div class="filter-field">
           <label class="form-label" for="statusFilter">Order Status</label>
-          <select id="statusFilter" v-model="statusFilter" class="form-select form-select-sm" data-testid="filter-status">
+          <select id="statusFilter" v-model="statusFilter" class="form-select form-select-sm" data-testid="filter-status"
+            :disabled="isSearching">
             <option value="in-progress">In progress</option>
             <option value="ready">Ready</option>
             <option value="completed">Completed</option>
@@ -227,7 +261,8 @@ watch([statusFilter, paymentFilter], () => {
 
         <div class="filter-field">
           <label class="form-label" for="paymentFilter">Payment</label>
-          <select id="paymentFilter" v-model="paymentFilter" class="form-select form-select-sm">
+          <select id="paymentFilter" v-model="paymentFilter" class="form-select form-select-sm"
+            :disabled="isSearching">
             <option value="all">All</option>
             <option value="paid">Paid</option>
             <option value="deposit">Deposit</option>
@@ -246,7 +281,20 @@ watch([statusFilter, paymentFilter], () => {
       </div>
 
 
-      <div style="flex-shrink: 0;">
+      <!-- Search (fills the rest of the bar) and Reset on the right -->
+      <div class="search-group">
+        <div class="filter-field search-field">
+          <label class="form-label" for="orderSearch">Search</label>
+          <input
+            id="orderSearch"
+            v-model="search"
+            type="search"
+            class="form-control form-control-sm"
+            placeholder="Order no. or customer name"
+            data-testid="order-search"
+          />
+        </div>
+
         <button
           v-if="hasChanges"
           type="button"
@@ -257,6 +305,11 @@ watch([statusFilter, paymentFilter], () => {
         </button>
       </div>
     </div>
+
+
+    <p v-if="isSearching" class="small text-muted mb-3">
+      Searching all orders. Clear the search to use the filters again.
+    </p>
 
 
     <!-- Result of the last bulk update -->
@@ -327,6 +380,9 @@ watch([statusFilter, paymentFilter], () => {
         <OrderCard v-else :order="o" />
       </div>
     </TransitionGroup>
+    <div v-else-if="isSearching" class="empty-state">
+      No orders match "{{ search.trim() }}".
+    </div>
     <div v-else class="empty-state">
       No orders here.
     </div>
@@ -340,6 +396,20 @@ watch([statusFilter, paymentFilter], () => {
 <style scoped>
 .filter-field {
   min-width: 160px;
+}
+
+
+.search-group {
+  flex: 1;            /* take up the rest of the filter bar */
+  min-width: 240px;   /* on small screens, wrap below the filters instead */
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+
+.search-field {
+  flex: 1;            /* the search box stretches; Reset keeps its size */
 }
 
 
