@@ -1,5 +1,5 @@
 <script setup>
-// "Restock" pop-up: restock ONE material or SEVERAL at once.
+// "What did you buy?" pop-up: record buying ONE material or SEVERAL at once (adds to stock).
 // Amounts start at the suggestion (e.g. 9 kg) and can be changed, typed in kg or g,
 // or unticked to skip. Saving sends each one to PATCH /api/materials/:id/restock.
 //
@@ -53,7 +53,7 @@ const isSingle = computed(() => props.rows.length === 1);
 
 async function save() {
   if (chosen.value.length === 0) {
-    error.value = 'Tick at least one material and enter how much you bought.';
+    error.value = 'Enter how much you bought.';
     return;
   }
   saving.value = true;
@@ -82,14 +82,14 @@ async function save() {
     <div class="modal-dialog modal-dialog-centered modal-lg">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 id="restock-title" class="modal-title">{{ isSingle ? 'Restock ' + rows[0].name : 'Restock all' }}</h5>
+          <h5 id="restock-title" class="modal-title">{{ isSingle ? 'How much ' + rows[0].name + ' did you buy?' : 'What did you buy?' }}</h5>
           <button type="button" class="btn-close" aria-label="Close" @click="$emit('close')"></button>
         </div>
 
         <div class="modal-body">
           <div v-if="error" class="alert alert-danger py-2">{{ error }}</div>
           <p class="restock-modal__intro">
-            The amount is filled in with our suggestion. Change it to what you actually bought<template v-if="!isSingle">, or untick one to skip it</template>.
+            We've filled in the suggested amount. Change it to what you actually bought<template v-if="!isSingle">, or untick anything you didn't buy</template>.
           </p>
 
           <div v-for="line in lines" :key="line.id" class="restock-modal__line" :class="{ 'is-skipped': !line.include }">
@@ -131,7 +131,7 @@ async function save() {
         <div class="modal-footer">
           <button type="button" class="btn btn-light" @click="$emit('close')">Cancel</button>
           <button type="button" class="btn btn-primary" :disabled="saving || chosen.length === 0" @click="save">
-            {{ saving ? 'Saving…' : isSingle ? 'Mark as restocked' : 'Restock ' + chosen.length + ' material(s)' }}
+            {{ saving ? 'Saving…' : isSingle ? 'Save' : 'Save ' + chosen.length + ' material(s)' }}
           </button>
         </div>
       </div>

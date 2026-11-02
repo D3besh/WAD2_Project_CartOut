@@ -336,10 +336,10 @@ export function checkOrderLine(product, variant, quantity, materials) {
 // =====================================================
 
 // The forecast's rows for <AttentionList>. Add your own rows (e.g. overdue orders) before or after.
-// Button keys sent back in @act:
-//   'short:<materialId>' → open RestockModal with [restockRowFor(forecast, materialId)]
-//   'restock-week'       → open RestockModal with restockPlanFor(forecast, 7)
-//   'all-good'           → go to /products
+// Button keys (AttentionList handles these itself):
+//   'short:<materialId>' → Materials, with that material highlighted in "What to buy"
+//   'restock-week'       → Materials ("What to buy" is the shopping list)
+//   'all-good'           → Products
 export function forecastAttentionItems(forecast, products, materials) {
   if (!forecast) {
     return [];
@@ -355,7 +355,7 @@ export function forecastAttentionItems(forecast, products, materials) {
       icon: '⚠️',
       title: 'Short ' + s.short + ' ' + s.name + ' tomorrow',
       text: (s.canMake === 0 ? 'Out of ' : 'Not enough ') + s.limitedBy,
-      actionLabel: s.limitedById ? 'Restock' : null,
+      actionLabel: 'What to buy',
       primary: true,
     });
   }
@@ -385,7 +385,7 @@ export function forecastAttentionItems(forecast, products, materials) {
       icon: '🛒',
       title: toBuy.length + ' material' + (toBuy.length === 1 ? '' : 's') + ' to buy this week',
       text: toBuy.map((r) => r.name + (r.alreadyLow ? ' (low now)' : '')).join(', '),
-      actionLabel: toBuy.length === 1 ? 'Restock' : 'Restock all',
+      actionLabel: 'See list',
       primary: true,
     });
   }

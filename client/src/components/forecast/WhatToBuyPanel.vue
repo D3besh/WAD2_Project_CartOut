@@ -4,13 +4,19 @@
 //
 // It loads its own data and opens the Restock pop-up itself, so a page only needs:
 //   <WhatToBuyPanel @restocked="reloadAll" />
+// Optional: :highlight="materialId" makes that material's row stand out
+// (used when coming from "What to buy →" on Products or Home).
 // @restocked → after the pop-up saves, with the names restocked, e.g. ['Flour', 'Vanilla'].
 //              Use it to reload the page's own material cards.
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import InfoTip from '../InfoTip.vue';
 import RestockModal from './RestockModal.vue';
 import { BUY_RANGES, restockPlanFor, restockStatusText, formatAmount, formatDay } from '../../utils/forecast.js';
+
+const props = defineProps({
+  highlight: { type: String, default: null }, // a material id to make stand out
+});
 
 const emit = defineEmits(['restocked']);
 
@@ -37,6 +43,17 @@ onMounted(loadForecast);
 const range = ref(7); // days: 7, 14 or 30
 
 const rows = computed(() => restockPlanFor(forecast.value, range.value));
+
+// If the highlighted material isn't in this week's list, show the whole month so it appears.
+// Only check AFTER the forecast has loaded (before that the list is empty, so nothing is "in" it).
+// Done once per highlight, so it doesn't undo the user's own choice later.
+let checkedHighlight = null;
+watch([forecast, () => props.highlight], () => {
+  if (forecast.value === null || !props.highlight || checkedHighlight === props.highlight) return;
+  checkedHighlight = props.highlight;
+  let inWeek = restockPlanFor(forecast.value, 7).some((r) => r.id === props.highlight);
+  range.value = inWeek ? 7 : 30;
+});
 
 // How many more would show up if they chose "1 month" (for the "+ 2 more later" hint)
 const laterCount = computed(() => {
@@ -94,7 +111,7 @@ function pillClass(r) {
     <p v-else-if="forecast === null" class="buy__hint">Loading…</p>
     <p v-else-if="rows.length === 0" class="buy__hint mt-2">Nothing to buy for now. 🎉</p>
 
-    <div v-for="r in rows" :key="r.id" class="buy__row">
+    <div v-for="r in rows" :key="r.id" class="buy__row" :class="{ 'is-highlighted': r.id === highlight }">
       <div class="buy__name">
         {{ r.name }}
         <span class="pill" :class="pillClass(r)">{{ restockStatusText(r) }}</span>
@@ -104,7 +121,7 @@ function pillClass(r) {
       </div>
       <div class="buy__act">
         <strong>Buy ~{{ r.buyText }}</strong>
-        <button type="button" class="btn btn-primary btn-sm" @click="restockRows = [r]">Restock</button>
+        <button type="button" class="btn btn-primary btn-sm" @click="restockRows = [r]">Mark as bought</button>
       </div>
     </div>
 
@@ -114,7 +131,7 @@ function pillClass(r) {
       class="btn btn-primary w-100 mt-2"
       @click="restockRows = rows"
     >
-      Restock all {{ rows.length }} at once
+      Mark all {{ rows.length }} as bought
     </button>
 
     <p v-if="laterCount > 0" class="buy__later">
@@ -150,6 +167,13 @@ function pillClass(r) {
   gap: 0.15rem 0.75rem;
   padding: 0.65rem 0;
   border-top: 1px solid var(--sk-border);
+}
+.buy__row.is-highlighted {
+  margin: 0 -0.6rem;
+  padding: 0.65rem 0.6rem;
+  background: var(--sk-warn-soft);
+  border-radius: var(--sk-radius-sm);
+  box-shadow: inset 3px 0 0 var(--sk-warn);
 }
 .buy__name { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; font-weight: 800; }
 .buy__meta { grid-column: 1; font-size: 0.76rem; color: var(--sk-muted); }

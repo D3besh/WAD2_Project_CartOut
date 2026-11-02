@@ -143,6 +143,34 @@ const productCards = computed(() => {
 });
 
 // Tomorrow's forecast for one row: { orders, extra }, or null if there's no forecast yet
+// Is there enough stock for tomorrow? Orders already logged have taken their materials
+// out of stock, so we only compare the EXTRA expected with what we can still make.
+//   null   = can't tell (no forecast or no recipe)
+//   0      = enough
+//   3      = short by 3
+function shortTomorrow(row) {
+  if (row.tomorrow === null || row.canMake === null) return null;
+  // Nothing ordered or expected tomorrow → nothing to say (a green "Enough" next to a red 0 is confusing)
+  if (row.tomorrow.orders === 0 && row.tomorrow.extra === 0) return null;
+  return Math.max(0, row.tomorrow.extra - row.canMake);
+}
+
+// Orders can be saved without enough materials (the New order page warns but allows it),
+// so stock can be below 0. Then tomorrow's ORDERED items can't all be made either.
+function loggedOrdersShort(row) {
+  if (row.tomorrow === null || row.tomorrow.orders === 0) return false;
+  let material = materials.value.find((m) => m.name === row.limitedBy);
+  return material !== undefined && material.quantity < 0;
+}
+
+// The material holding this row back, for the "What to buy →" link
+// (Materials highlights it in the "What to buy" list)
+function buyLink(row) {
+  let material = materials.value.find((m) => m.name === row.limitedBy);
+  if (!material) return '/materials';
+  return { path: '/materials', query: { highlight: material.id } };
+}
+
 function tomorrowFor(rowId) {
   if (forecast.value === null) {
     return null;
@@ -419,6 +447,17 @@ async function deleteProduct() {
               <span>Tomorrow</span>
               <span><strong>{{ itemsText(row.tomorrow.orders) }}</strong> ordered + ~{{ row.tomorrow.extra }} more</span>
             </div>
+
+            <!-- Enough for tomorrow? If not, send them to the "What to buy" list -->
+            <div v-if="loggedOrdersShort(row)" class="fc-status is-short">
+              <span>⚠ Need more {{ row.limitedBy }} for tomorrow</span>
+              <RouterLink :to="buyLink(row)">What to buy →</RouterLink>
+            </div>
+            <div v-else-if="shortTomorrow(row) === 0" class="fc-status is-ok">✓ Enough for tomorrow</div>
+            <div v-else-if="shortTomorrow(row) > 0" class="fc-status is-short">
+              <span>⚠ Short {{ shortTomorrow(row) }} for tomorrow</span>
+              <RouterLink :to="buyLink(row)">What to buy →</RouterLink>
+            </div>
           </div>
         </div>
       </ProductCard>
@@ -576,4 +615,20 @@ async function deleteProduct() {
 @media (max-width: 479.98px) {
   .prod-grid { grid-template-columns: 1fr; }
 }
+
+/* "✓ Enough for tomorrow" / "⚠ Short 3 for tomorrow  What to buy →" */
+.fc-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.5rem;
+  margin-top: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: var(--sk-radius-sm);
+}
+.fc-status.is-ok { color: var(--sk-ok); background: var(--sk-ok-soft); }
+.fc-status.is-short { color: var(--sk-warn); background: var(--sk-warn-soft); }
+.fc-status a { color: inherit; white-space: nowrap; }
 </style>
