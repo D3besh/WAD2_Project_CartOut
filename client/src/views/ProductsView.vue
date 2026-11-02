@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import ProductCard from '../components/ProductCard.vue';
+import ActionBanner from '../components/ActionBanner.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
 import { fullRecipe, calculateCanMake } from '../utils/capacity.js';
 import { formatDay, dayForecast } from '../utils/forecast.js';
@@ -15,8 +16,7 @@ const router = useRouter(); // to change the address
 // =====================================================
 const products = ref([]);         // all products from the server
 const materials = ref([]);        // all materials (needed for recipes and "can make")
-const errorMessage = ref('');
-const infoMessage = ref('');      // blue message, e.g. "... was archived"
+const banner = ref(null);         // message under the navbar, e.g. { type: 'success', text: 'Brownies added' }
 const search = ref('');
 const forecast = ref(null);       // the 30-day forecast from the server (null = not loaded)
 
@@ -37,7 +37,7 @@ async function loadData() {
     products.value = productsResponse.data;
     materials.value = materialsResponse.data;
   } catch (error) {
-    errorMessage.value = getErrorText(error);
+    banner.value = { type: 'error', text: "Couldn't load your products: " + getErrorText(error) };
   }
 
   await loadForecast();
@@ -163,9 +163,9 @@ function tomorrowFor(rowId) {
   return dayForecast(forecast.value.products.items, rowId, 1); // 0 = today, 1 = tomorrow
 }
 
-// 1 → "1 order", 3 → "3 orders"
-function ordersText(count) {
-  return count === 1 ? '1 order' : count + ' orders';
+// 1 → "1 item", 3 → "3 items" (an item = one of what you sell, e.g. one box of cookies)
+function itemsText(count) {
+  return count === 1 ? '1 item' : count + ' items';
 }
 
 // Tomorrow's date, e.g. "Sat, 24 Oct"
@@ -345,8 +345,10 @@ async function saveForm() {
     variants: cleanVariants,
   };
 
+  let isNew = editingId.value === null;
+
   try {
-    if (editingId.value === null) {
+    if (isNew) {
       let url = '/api/products';
       await axios.post(url, productData);
     } else {
@@ -355,6 +357,10 @@ async function saveForm() {
     }
 
     showForm.value = false;
+    banner.value = {
+      type: 'success',
+      text: isNew ? productData.name + ' added.' : 'Changes to ' + productData.name + ' saved.',
+    };
     await loadData();
   } catch (error) {
     formError.value = getErrorText(error);
@@ -375,11 +381,13 @@ async function deleteProduct() {
     // The server archives (hides) the product instead of deleting it
     // if past (ready / completed) orders use it. It replies { archived: true } then.
     if (response.data && response.data.archived) {
-      infoMessage.value =
-        name + ' is used in past orders, so it was archived (hidden) instead of deleted. ' +
-        'Old orders will still show it.';
+      banner.value = {
+        type: 'info',
+        text: name + ' is used in past orders, so it was archived (hidden) instead of deleted. ' +
+          'Old orders will still show it.',
+      };
     } else {
-      infoMessage.value = name + ' was deleted.';
+      banner.value = { type: 'success', text: name + ' deleted.' };
     }
 
     showForm.value = false;
@@ -403,14 +411,8 @@ async function deleteProduct() {
       <button type="button" class="btn btn-primary" @click="openAddForm">+ Add product</button>
     </header>
 
-    <!-- ===== Error message ===== -->
-    <div v-if="errorMessage" class="inv-banner inv-banner--danger mb-3">{{ errorMessage }}</div>
-
-    <!-- ===== Info message (e.g. after archiving or deleting) ===== -->
-    <div v-if="infoMessage" class="inv-banner inv-banner--info mb-3">
-      <span>{{ infoMessage }}</span>
-      <button type="button" class="btn-close" aria-label="Dismiss" @click="infoMessage = ''"></button>
-    </div>
+    <!-- ===== What just happened (sticks under the navbar) ===== -->
+    <ActionBanner :message="banner" @close="banner = null" />
 
     <!-- ===== Warning: products/variants that can't be made ===== -->
     <div v-if="cannotMake.length > 0" class="inv-banner inv-banner--warn mb-3">
@@ -431,7 +433,7 @@ async function deleteProduct() {
         <ul>
           <li v-for="s in shortTomorrow" :key="s.name">
             <strong>{{ s.name }}</strong>:
-            {{ ordersText(s.orders) }} + ~{{ s.extra }} expected, you can make {{ s.canMake }} more
+            {{ itemsText(s.orders) }} ordered + ~{{ s.extra }} expected, you can make {{ s.canMake }} more
             → <strong>short by {{ s.short }}</strong>
           </li>
         </ul>
@@ -478,7 +480,7 @@ async function deleteProduct() {
             <!-- From the forecast -->
             <div v-if="row.tomorrow !== null" class="fc-tomorrow">
               <span>Tomorrow</span>
-              <span><strong>{{ ordersText(row.tomorrow.orders) }}</strong> + ~{{ row.tomorrow.extra }} more</span>
+              <span><strong>{{ itemsText(row.tomorrow.orders) }}</strong> ordered + ~{{ row.tomorrow.extra }} more</span>
             </div>
           </div>
         </div>

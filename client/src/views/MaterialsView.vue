@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import MaterialCard from '../components/MaterialCard.vue';
+import ActionBanner from '../components/ActionBanner.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
 import { formatDay, restockWithin, restockStatusText } from '../utils/forecast.js';
 
@@ -13,7 +14,7 @@ const router = useRouter(); // to change the address
 // 1. DATA
 // =====================================================
 const materials = ref([]);        // all materials from the server
-const errorMessage = ref('');     // red box at the top of the page
+const banner = ref(null);         // message under the navbar, e.g. { type: 'success', text: 'Butter added' }
 const search = ref('');           // text typed in the search box
 
 // Remember the seller's filter choice in localStorage,
@@ -56,7 +57,7 @@ async function loadMaterials() {
     let response = await axios.get(url);
     materials.value = response.data;
   } catch (error) {
-    errorMessage.value = getErrorText(error);
+    banner.value = { type: 'error', text: "Couldn't load your materials: " + getErrorText(error) };
   }
 }
 
@@ -220,8 +221,11 @@ async function saveForm() {
     return;
   }
 
+  let name = form.value.name;
+  let isNew = editingId.value === null;
+
   try {
-    if (editingId.value === null) {
+    if (isNew) {
       // Add a new material
       let url = '/api/materials';
       await axios.post(url, form.value);
@@ -232,6 +236,7 @@ async function saveForm() {
     }
 
     showForm.value = false;
+    banner.value = { type: 'success', text: isNew ? name + ' added.' : 'Changes to ' + name + ' saved.' };
     await reloadAll(); // refresh the list and forecast
   } catch (error) {
     formError.value = getErrorText(error);
@@ -244,10 +249,12 @@ async function deleteMaterial() {
   }
 
   let url = '/api/materials/' + editingId.value;
+  let name = form.value.name;
 
   try {
     await axios.delete(url);
     showForm.value = false;
+    banner.value = { type: 'success', text: name + ' deleted.' };
     await reloadAll();
   } catch (error) {
     formError.value = getErrorText(error);
@@ -266,9 +273,10 @@ async function markRestocked(material) {
 
     try {
       await axios.patch(url, { level: 'high' });
+      banner.value = { type: 'success', text: material.name + ' restocked. Level set to High.' };
       await reloadAll();
     } catch (error) {
-      errorMessage.value = getErrorText(error);
+      banner.value = { type: 'error', text: "Couldn't restock " + material.name + ': ' + getErrorText(error) };
     }
   } else {
     // Quantity materials: open the pop-up to ask how much was bought
@@ -288,6 +296,11 @@ async function saveRestock() {
 
   try {
     await axios.patch(url, { amount: restockAmount.value });
+    let m = restockTarget.value;
+    banner.value = {
+      type: 'success',
+      text: m.name + ' restocked. You now have ' + (m.quantity + restockAmount.value) + ' ' + m.unit + '.',
+    };
     restockTarget.value = null; // close the pop-up
     await reloadAll();
   } catch (error) {
@@ -308,8 +321,8 @@ async function saveRestock() {
       <button type="button" class="btn btn-primary" @click="openAddForm">+ Add material</button>
     </header>
 
-    <!-- ===== Error message ===== -->
-    <div v-if="errorMessage" class="inv-banner inv-banner--danger mb-3">{{ errorMessage }}</div>
+    <!-- ===== What just happened (sticks under the navbar) ===== -->
+    <ActionBanner :message="banner" @close="banner = null" />
 
     <!-- ===== Low stock banner (only when something is low) ===== -->
     <div v-if="lowMaterials.length > 0" class="inv-banner inv-banner--warn mb-3">
@@ -433,6 +446,7 @@ async function saveRestock() {
               <option value="g">grams (g)</option>
               <option value="ml">millilitres (ml)</option>
               <option value="pieces">pieces</option>
+              <option value="cm">centimetres (cm), e.g. ribbon, fabric</option>
             </select>
 
             <span class="form-label d-block">How do you track it?</span>
