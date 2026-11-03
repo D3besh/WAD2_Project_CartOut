@@ -3,7 +3,7 @@
 // Still TODO (prototype views 2–4), to add on top of this form later:
 //   - "Extract order details" from the pasted message, calling extractOrder()
 //   - run checkOrder() and warn if the order can't be fulfilled
-import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 
 const products = ref([]);
@@ -80,6 +80,25 @@ async function searchCustomers() {
     searchingCustomers.value = false;
   }
 }
+
+const customerDropdownRef = ref(null);
+
+function handleClickOutside(event) {
+  if (
+    customerDropdownRef.value &&
+    !customerDropdownRef.value.contains(event.target)
+  ) {
+    showCustomers.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside);
+});
 
 function selectCustomer(customer) {
   form.customerName = customer.customerName;
@@ -461,7 +480,7 @@ const autoFillForm = async () => {
       <fieldset class="mb-4">
         <legend class="h5">Customer</legend>
 
-        <div class="mb-3 position-relative">
+        <div class="mb-3 position-relative" ref="customerDropdownRef">
           <label for="customerName" class="form-label">Name *</label>
 
           <input id="customerName" v-model="form.customerName" class="form-control" :class="{
