@@ -178,6 +178,17 @@ router.post('/', async (req, res, next) => {
     if (Number(depositAmount) > Number(price)) {
       return res.status(400).json({ error: 'Deposit cannot be more than the price' });
     }
+    // No backdating. The page blocks this too, but anyone can skip the page and
+    // call the API directly. Comparing exact moments (not dates) means time zones
+    // don't matter. 5 minutes of leeway covers a slow save or a browser clock
+    // that's slightly off, so a time picked "just now" isn't rejected unfairly.
+    const due = new Date(dueAt);
+    if (!dueAt || isNaN(due)) {
+      return res.status(400).json({ error: 'Enter a valid due date' });
+    }
+    if (due.getTime() < Date.now() - 5 * 60 * 1000) {
+      return res.status(400).json({ error: "Due date can't be in the past" });
+    }
     // Email is optional, but if given it must look like an email
     if (customerEmail && !/^\S+@\S+\.\S+$/.test(customerEmail.trim())) {
       return res.status(400).json({ error: 'Customer email is not a valid email address' });
