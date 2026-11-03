@@ -5,6 +5,14 @@ import { ref, computed, onMounted } from "vue";
 import axios from "axios";
 import { fullRecipe, calculateCanMake } from "../utils/capacity.js";
 import OrderCard from "../components/OrderCard.vue";
+import {
+  buildWeekDays,
+  busiestOf,
+  forecastAttentionItems,
+  formatTime,
+  formatDay,
+} from "../utils/forecast.js";
+import BackToTop from "../components/BackToTop.vue";
 
 const shopName = ref("");
 const loading = ref(true);
@@ -115,6 +123,37 @@ const fewestProducts = computed(() => {
 function showLowMaterials() {
   localStorage.setItem("materialsShowLowOnly", "true");
 }
+// ===== Home forecast =====
+const forecast = ref(null);
+const forecastLoading = ref(true);
+const forecastError = ref("");
+
+async function loadForecast() {
+  forecastLoading.value = true;
+  forecastError.value = "";
+
+  try {
+    const response = await axios.get("/api/materials/forecast");
+    forecast.value = response.data;
+  } catch (error) {
+    forecastError.value =
+      error.response?.data?.message || "Could not load forecast.";
+  } finally {
+    forecastLoading.value = false;
+  }
+}
+
+const weekDays = computed(() => buildWeekDays(forecast.value, products.value));
+
+const busiestDay = computed(() => busiestOf(weekDays.value));
+
+const attentionItems = computed(() =>
+  forecastAttentionItems(forecast.value, products.value, materials.value),
+);
+
+const maxWeekItems = computed(() =>
+  Math.max(1, ...weekDays.value.map((day) => day.orders + day.extra)),
+);
 
 // ===== Orders due today =====
 const orders = ref([]);
@@ -159,7 +198,7 @@ async function loadOrders() {
 }
 
 // ===== Dashboard settings =====
-const dashboardPeriod = ref("all");
+const dashboardPeriod = ref("month");
 const showDashboardOptions = ref(false);
 const dashboardPreferenceMessage = ref("");
 const showAnalyticsDashboard = ref(true);
@@ -590,36 +629,303 @@ const dashboardGraph = computed(() => {
 });
 
 onMounted(loadOrders);
-
 onMounted(loadInventory);
-
 onMounted(loadShop);
+onMounted(loadForecast);
 </script>
 
 <template>
-  <section data-testid="page-home" class="container mt-4">
-    <!-- Date and greeting -->
-    <p class="text-secondary">{{ today }}</p>
+  <section data-testid="page-home" class="container mt-0">
+    <!-- Greeting and New Order button -->
+    <div
+      class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-2"
+    >
+      <h1 class="h3 mb-0">
+        {{ greeting }}<span v-if="shopName">, {{ shopName }}</span>
+      </h1>
 
-    <h1>
-      {{ greeting }}<span v-if="shopName">, {{ shopName }}</span>
-    </h1>
-
-    <p v-if="loading">Loading your shop...</p>
-
-    <div v-if="errorMessage" class="alert alert-danger" role="alert">
-      {{ errorMessage }}
-      <button type="button" class="btn btn-danger btn-sm" @click="loadShop">
-        Retry
-      </button>
+      <RouterLink
+        to="/orders/new"
+        class="btn btn-primary text-nowrap align-self-start align-self-sm-center"
+      >
+        + New Order
+      </RouterLink>
     </div>
+
+    <!-- Operational dashboard -->
+    <div class="row g-3 mb-3 align-items-start">
+      <!-- Left: Orders and weekly forecast -->
+      <div class="col-12 col-lg-7">
+        <!-- Today's orders -->
+        <div class="card mb-3">
+          <div class="card-body">
+            <h5 class="card-title">
+              Today's orders
+              <span
+                v-if="!ordersLoading && !ordersError"
+                class="status status--muted ms-1"
+              >
+                {{ todaysOrders.length }}
+              </span>
+            </h5>
+
+            <p v-if="ordersLoading">Loading orders...</p>
+
+            <div v-else-if="ordersError" class="alert alert-danger">
+              {{ ordersError }}
+              <button
+                type="button"
+                class="btn btn-danger btn-sm"
+                @click="loadOrders"
+              >
+                Retry
+              </button>
+            </div>
+
+            <div v-else-if="todaysOrders.length" class="d-flex flex-wrap gap-3">
+              <div
+                v-for="order in todaysOrders"
+                :key="order._id"
+                class="home-order-wrapper"
+              >
+                <OrderCard :order="order" />
+              </div>
+            </div>
+
+            <p v-else class="text-secondary">
+              No outstanding orders due today.
+            </p>
+
+            <div class="d-flex gap-2 mt-3">
+              <RouterLink
+                v-if="!ordersLoading && !ordersError && todaysOrders.length"
+                to="/orders"
+                class="btn btn-light"
+              >
+                See all orders
+              </RouterLink>
+            </div>
+          </div>
+        </div>
+
+        <!-- Weekly forecast -->
+        <section class="card mb-0" aria-labelledby="week-heading">
+          <div class="card-body py-3">
+            <div
+              class="d-flex justify-content-between align-items-center gap-2 mb-1"
+            >
+              <h2 id="week-heading" class="h6 fw-bold mb-0">📅 This week</h2>
+
+              <RouterLink to="/orders" class="home-link small text-nowrap">
+                Order log →
+              </RouterLink>
+            </div>
+
+            <p class="small text-secondary mb-2">
+              Ordered items and expected demand for the next 7 days
+            </p>
+
+            <p v-if="forecastLoading" class="small text-secondary">
+              Loading forecast...
+            </p>
+
+            <div v-else-if="forecastError" class="alert alert-danger">
+              {{ forecastError }}
+              <button
+                type="button"
+                class="btn btn-outline-danger btn-sm"
+                @click="loadForecast"
+              >
+                Retry
+              </button>
+            </div>
+
+            <div v-else class="home-week-scroll">
+              <div class="home-week-grid">
+                <div
+                  v-for="day in weekDays"
+                  :key="day.date"
+                  class="home-week-day"
+                  :class="{
+                    'home-week-day--today': day.index === 0,
+                  }"
+                >
+                  <div class="small fw-bold">
+                    {{
+                      day.index === 0
+                        ? "Today"
+                        : day.index === 1
+                          ? "Tomorrow"
+                          : formatDay(day.date)
+                    }}
+                  </div>
+
+                  <div class="home-week-chart">
+                    <div
+                      class="home-week-bar home-week-bar--ordered"
+                      :style="{
+                        width: (day.orders / maxWeekItems) * 100 + '%',
+                      }"
+                    ></div>
+
+                    <div
+                      class="home-week-bar home-week-bar--expected"
+                      :style="{
+                        width: (day.extra / maxWeekItems) * 100 + '%',
+                      }"
+                    ></div>
+                  </div>
+
+                  <div class="home-week-details">
+                    <div class="fw-bold">
+                      <strong>{{ day.orders }} items</strong> ordered
+                    </div>
+
+                    <div class="text-secondary">+{{ day.extra }} expected</div>
+
+                    <div class="mt-1 fw-semibold">
+                      {{ formatTime(day.minutes) }}
+                    </div>
+
+                    <span
+                      v-if="busiestDay?.date === day.date"
+                      class="status status--warn mt-1"
+                    >
+                      Busiest
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <!-- End left column -->
+
+      <!-- Right: Attention and product capacity -->
+      <div class="col-12 col-lg-5">
+        <!-- Needs your attention -->
+        <div class="card mb-3">
+          <div class="card-body">
+            <h2 class="h6 fw-bold mb-1">⚠️ Needs your attention</h2>
+            <p class="small text-secondary mb-3">Tap one to sort it out</p>
+
+            <p v-if="forecastLoading" class="small text-secondary">
+              Checking your business...
+            </p>
+
+            <div v-else-if="forecastError" class="small text-danger">
+              {{ forecastError }}
+            </div>
+
+            <template v-else>
+              <p
+                v-if="attentionItems.length === 0"
+                class="small text-secondary"
+              >
+                Nothing needs your attention right now.
+              </p>
+
+              <div
+                v-for="item in attentionItems"
+                :key="item.key"
+                class="home-attention-item mb-2"
+                :class="'home-attention-item--' + item.tone"
+              >
+                <div class="d-flex align-items-start gap-2">
+                  <span>{{ item.icon }}</span>
+
+                  <div class="flex-grow-1">
+                    <div class="fw-bold small">
+                      {{ item.title }}
+                    </div>
+                    <div class="small text-secondary">
+                      {{ item.text }}
+                    </div>
+                  </div>
+
+                  <RouterLink
+                    v-if="item.actionLabel"
+                    :to="item.key === 'all-good' ? '/products' : '/materials'"
+                    class="btn btn-light btn-sm"
+                  >
+                    {{ item.actionLabel }}
+                  </RouterLink>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Can make now -->
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <h2 class="h6 fw-bold mb-1">🧁 Can make now</h2>
+
+              <RouterLink to="/products" class="home-link small">
+                Products →
+              </RouterLink>
+            </div>
+
+            <p class="small text-secondary mb-3">
+              Products with the lowest available capacity
+            </p>
+
+            <p v-if="inventoryLoading" class="small text-secondary">
+              Loading products...
+            </p>
+
+            <div v-else-if="inventoryError" class="small text-danger">
+              {{ inventoryError }}
+            </div>
+
+            <template v-else>
+              <p
+                v-if="fewestProducts.length === 0"
+                class="small text-secondary"
+              >
+                No product capacity data available.
+              </p>
+
+              <div
+                v-for="item in fewestProducts.slice(0, 3)"
+                :key="item.key"
+                class="d-flex justify-content-between align-items-start border-bottom py-2 gap-2"
+              >
+                <div>
+                  <div class="small fw-semibold">
+                    {{ item.name }}
+                  </div>
+
+                  <div v-if="item.limitedBy" class="small text-secondary">
+                    Limited by {{ item.limitedBy }}
+                  </div>
+                </div>
+
+                <strong
+                  class="small"
+                  :class="{ 'text-danger': item.canMake === 0 }"
+                >
+                  {{ item.canMake }}
+                </strong>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+      <!-- End right column -->
+    </div>
+    <!-- End operational dashboard -->
 
     <!-- Dashboard -->
     <section class="my-4" aria-labelledby="dashboard-heading">
       <div
-        class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-3"
+        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"
       >
-        <h2 id="dashboard-heading" class="h4 mb-0">Dashboard</h2>
+        <h2 id="dashboard-heading" class="h5 fw-bold mb-0">
+          How the business is doing
+        </h2>
 
         <div class="d-flex flex-row flex-nowrap align-items-center gap-2">
           <button
@@ -631,10 +937,6 @@ onMounted(loadShop);
           >
             Customise dashboard
           </button>
-
-          <RouterLink to="/orders/new" class="btn btn-primary text-nowrap">
-            + New Order
-          </RouterLink>
         </div>
       </div>
 
@@ -712,444 +1014,296 @@ onMounted(loadShop);
         </div>
       </div>
 
-
       <div v-if="showAnalyticsDashboard">
-      <!-- Financial period -->
-      <div class="row mb-2">
-        <div class="col-12 col-sm-6 col-lg-4">
-          <label for="dashboard-period" class="form-label">
-            Sales and profit period
-          </label>
-
-          <select
-            id="dashboard-period"
-            v-model="dashboardPeriod"
-            class="form-select"
-            aria-describedby="dashboard-period-help"
-          >
-            <option value="all">All time</option>
-            <option value="month">This month</option>
-            <option value="year">This year</option>
-          </select>
-        </div>
-      </div>
-
-      <p id="dashboard-period-help" class="small text-secondary">
-        Outstanding orders shows the current total.
-      </p>
-
-      <!-- Loading, error and hidden states -->
-      <p v-if="ordersLoading" role="status">Loading dashboard...</p>
-
-      <div v-else-if="ordersError" class="alert alert-danger" role="alert">
-        Dashboard unavailable. {{ ordersError }}
-        <button
-          type="button"
-          class="btn btn-outline-danger btn-sm"
-          @click="loadOrders"
-        >
-          Retry
-        </button>
-      </div>
-
-      <template v-else>
-        <div v-if="dashboardVisible.length === 0" class="alert alert-info">
-          All dashboard cards are hidden.
-          <button
-            type="button"
-            class="btn btn-link p-0 align-baseline"
-            @click="resetDashboardCards"
-          >
-            Restore default cards
-          </button>
-        </div>
-
-        <!-- Summary cards -->
-        <div class="row g-3">
+        <!-- Financial period -->
+        <div class="d-flex justify-content-end mb-2">
           <div
-            v-for="card in dashboardSummaryCards"
-            :key="card.id"
-            class="col-12 col-md-6 col-xl-4"
+            class="btn-group btn-group-sm"
+            role="group"
+            aria-label="Sales and profit period"
           >
-            <article class="card h-100">
-              <div class="card-body">
-                <h3 class="h6">{{ card.title }}</h3>
-                <p class="fs-3 fw-bold my-3 text-break">
-                  {{ card.value }}
-                </p>
-                <p class="small text-secondary mb-0">{{ card.note }}</p>
-
-                <template v-if="card.id === 'profit'">
-                  <p class="small mt-2 mb-0">
-                    {{ dashboardTotals.included }} of
-                    {{ dashboardTotals.total }} completed orders included.
-                  </p>
-
-                  <p
-                    v-if="dashboardTotals.excluded > 0"
-                    class="small mt-2 mb-0"
-                  >
-                    {{ dashboardTotals.excluded }} order(s) excluded because
-                    cost or price details are unavailable.
-                    <RouterLink to="/products">
-                      Review product costs </RouterLink
-                    >.
-                  </p>
-                </template>
-              </div>
-            </article>
+            <button
+              v-for="period in [
+                { value: 'month', label: 'This month' },
+                { value: 'year', label: 'This year' },
+                { value: 'all', label: 'All time' },
+              ]"
+              :key="period.value"
+              type="button"
+              class="btn"
+              :class="
+                dashboardPeriod === period.value ? 'btn-primary' : 'btn-light'
+              "
+              :aria-pressed="dashboardPeriod === period.value"
+              @click="dashboardPeriod = period.value"
+            >
+              {{ period.label }}
+            </button>
           </div>
         </div>
 
-        <!-- Profit line graph -->
-        <article v-if="dashboardVisible.includes('trend')" class="card mt-3">
-          <div class="card-body">
-            <h3 class="h5">Estimated profit over time</h3>
+        <p id="dashboard-period-help" class="small text-secondary">
+          Outstanding orders shows the current total.
+        </p>
 
-            <p class="small text-secondary">
-              {{
-                dashboardPeriod === "month"
-                  ? "Profit within each weekly date range."
-                  : "Profit within each month."
-              }}
-              Completed orders grouped by scheduled fulfilment date, using
-              current product costs.
-            </p>
+        <!-- Loading, error and hidden states -->
+        <p v-if="ordersLoading" role="status">Loading dashboard...</p>
 
-            <p v-if="dashboardTrend.length === 0" class="text-secondary">
-              No dated completed orders in this period.
-            </p>
-
-            <template v-else>
-              <p v-if="!dashboardGraph" class="text-secondary">
-                No profit figures are available for elapsed ranges. Check the
-                cost coverage in the figures below.
-              </p>
-
-              <div v-else class="overflow-auto">
-                <svg
-                  viewBox="0 0 640 230"
-                  class="profit-line-chart"
-                  role="img"
-                  aria-labelledby="profit-chart-title profit-chart-description"
-                >
-                  <title id="profit-chart-title">
-                    Estimated
-                    {{ dashboardPeriod === "month" ? "weekly" : "monthly" }}
-                    gross profit in Singapore dollars
-                  </title>
-
-                  <desc id="profit-chart-description">
-                    Exact values and cost coverage are available below. Future
-                    ranges are blank. Missing profit figures break the line.
-                    Empty elapsed ranges show zero.
-                  </desc>
-
-                  <!-- Grid and currency labels -->
-                  <g v-for="tick in dashboardGraph.ticks" :key="tick.value">
-                    <line
-                      x1="100"
-                      x2="580"
-                      :y1="tick.y"
-                      :y2="tick.y"
-                      class="profit-chart-grid"
-                    />
-
-                    <text
-                      x="90"
-                      :y="tick.y + 4"
-                      text-anchor="end"
-                      class="profit-chart-label"
-                    >
-                      {{ dashboardMoney(tick.value) }}
-                    </text>
-                  </g>
-
-                  <!-- Zero baseline -->
-                  <line
-                    x1="100"
-                    x2="580"
-                    :y1="dashboardGraph.zeroY"
-                    :y2="dashboardGraph.zeroY"
-                    class="profit-chart-zero"
-                  />
-
-                  <!-- Profit line -->
-                  <path :d="dashboardGraph.path" class="profit-chart-line" />
-
-                  <!-- Points and date labels -->
-                  <g
-                    v-for="(point, index) in dashboardGraph.points"
-                    :key="point.key"
-                  >
-                    <circle
-                      v-if="point.y !== null"
-                      :cx="point.x"
-                      :cy="point.y"
-                      r="5"
-                      class="profit-chart-point"
-                    >
-                      <title>
-                        {{ point.label }}
-                        {{ point.ongoing ? "(current)" : "" }}:
-                        {{ dashboardMoney(point.profit) }}.
-                        {{ point.included }} of {{ point.total }}
-                        orders included.
-                      </title>
-                    </circle>
-
-                    <text
-                      v-if="
-                        dashboardPeriod === 'month' ||
-                        index === 0 ||
-                        index === dashboardGraph.points.length - 1 ||
-                        index % Math.ceil(dashboardGraph.points.length / 5) ===
-                          0
-                      "
-                      :x="point.x"
-                      y="210"
-                      text-anchor="middle"
-                      class="profit-chart-label"
-                    >
-                      {{ point.label }}{{ point.ongoing ? "*" : "" }}
-                    </text>
-                  </g>
-                </svg>
-              </div>
-
-              <p class="small text-secondary mt-2">
-                * Ongoing range. Future ranges are blank. Ranges with no
-                completed orders show zero once they begin. Missing costs may
-                make figures partial or unavailable.
-              </p>
-
-              <!-- Accessible exact figures -->
-              <details class="mt-2">
-                <summary class="small">
-                  {{
-                    dashboardPeriod === "month"
-                      ? "View weekly figures"
-                      : "View monthly figures"
-                  }}
-                </summary>
-
-                <div class="table-responsive mt-2">
-                  <table class="table align-middle mb-0">
-                    <thead>
-                      <tr>
-                        <th scope="col">Period</th>
-                        <th scope="col">Estimated profit</th>
-                        <th scope="col">Orders included</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      <tr v-for="row in dashboardTrend" :key="row.key">
-                        <th scope="row">
-                          {{ row.label }}
-                          <span v-if="row.ongoing" class="small fw-normal">
-                            (current)
-                          </span>
-                        </th>
-
-                        <td>
-                          <template v-if="row.future"> Not started </template>
-
-                          <template v-else>
-                            {{ dashboardMoney(row.profit) }}
-                            <span v-if="row.excluded && row.included">
-                              · partial
-                            </span>
-                          </template>
-                        </td>
-
-                        <td>
-                          <span v-if="row.future">—</span>
-                          <span v-else>
-                            {{ row.included }} / {{ row.total }}
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </template>
-
-            <p v-if="dashboardUndatedCount > 0" class="small mt-2 mb-0">
-              {{ dashboardUndatedCount }} order(s) without valid fulfilment
-              dates are excluded.
-            </p>
-          </div>
-        </article>
-      </template>
-    </div>
-    </section>
-    
-
-    <!-- Today's orders -->
-    <div class="card mt-3 mb-3">
-      <div class="card-body">
-        <h5 class="card-title">
-          Today's orders
-          <span
-            v-if="!ordersLoading && !ordersError"
-            class="status status--muted ms-1"
-          >
-            {{ todaysOrders.length }}
-          </span>
-        </h5>
-
-        <p v-if="ordersLoading">Loading orders...</p>
-
-        <div v-else-if="ordersError" class="alert alert-danger">
-          {{ ordersError }}
+        <div v-else-if="ordersError" class="alert alert-danger" role="alert">
+          Dashboard unavailable. {{ ordersError }}
           <button
             type="button"
-            class="btn btn-danger btn-sm"
+            class="btn btn-outline-danger btn-sm"
             @click="loadOrders"
           >
             Retry
           </button>
         </div>
 
-        <div v-else-if="todaysOrders.length" class="d-flex flex-wrap gap-3">
-          <div
-            v-for="order in todaysOrders"
-            :key="order._id"
-            class="home-order-wrapper"
-          >
-            <OrderCard :order="order" />
-          </div>
-        </div>
-
-        <p v-else class="text-secondary">No outstanding orders due today.</p>
-
-        <div class="d-flex gap-2 mt-3">
-          <RouterLink
-            v-if="!ordersLoading && !ordersError && todaysOrders.length"
-            to="/orders"
-            class="btn btn-light"
-          >
-            See all orders
-          </RouterLink>
-        </div>
-      </div>
-    </div>
-
-    <!-- Inventory error -->
-    <div v-if="inventoryError" class="alert alert-danger" role="alert">
-      {{ inventoryError }}
-      <button
-        type="button"
-        class="btn btn-danger btn-sm"
-        @click="loadInventory"
-      >
-        Retry
-      </button>
-    </div>
-
-    <div class="row">
-      <!-- Running low -->
-      <div class="col-md-6">
-        <div class="card h-100">
-          <div class="card-body">
-            <h5 class="card-title">Running low</h5>
-
-            <p v-if="inventoryLoading">Loading materials...</p>
-
-            <template v-else-if="!inventoryError">
-              <p v-if="lowMaterials.length === 0" class="text-secondary">
-                No materials are running low.
-              </p>
-
-              <ul v-else class="list-group list-group-flush">
-                <li
-                  v-for="material in lowMaterials"
-                  :key="material.id"
-                  class="list-group-item px-0"
-                >
-                  <div
-                    class="d-flex justify-content-between align-items-center"
-                  >
-                    <span>{{ material.name }}</span>
-                    <span class="status status--danger">Running low</span>
-                  </div>
-
-                  <small
-                    v-if="material.trackingMode === 'quantity'"
-                    class="text-secondary"
-                  >
-                    {{ material.quantity }} {{ material.unit }} left
-                  </small>
-
-                  <small v-else class="text-secondary">
-                    Level: {{ material.level }}
-                  </small>
-                </li>
-              </ul>
-            </template>
-
-            <RouterLink
-              to="/materials"
-              class="home-link d-inline-block mt-3"
-              @click="showLowMaterials"
+        <template v-else>
+          <div v-if="dashboardVisible.length === 0" class="alert alert-info">
+            All dashboard cards are hidden.
+            <button
+              type="button"
+              class="btn btn-link p-0 align-baseline"
+              @click="resetDashboardCards"
             >
-              See all
-            </RouterLink>
+              Restore default cards
+            </button>
           </div>
-        </div>
-      </div>
 
-      <!-- Fewest you can make -->
-      <div class="col-md-6">
-        <div class="card h-100">
-          <div class="card-body">
-            <h5 class="card-title">Fewest you can make</h5>
+          <!-- Summary cards -->
+          <div class="row g-2">
+            <div
+              v-for="card in dashboardSummaryCards"
+              :key="card.id"
+              class="col-12 col-md-4"
+            >
+              <article class="card h-100">
+                <div class="card-body py-3">
+                  <h3 class="small fw-semibold mb-2">
+                    {{ card.title }}
+                  </h3>
+                  <p class="h5 fw-bold mb-2 text-break">
+                    {{ card.value }}
+                  </p>
+                  <p class="small text-secondary mb-0">{{ card.note }}</p>
 
-            <p v-if="inventoryLoading">Loading products...</p>
+                  <template v-if="card.id === 'profit'">
+                    <p class="small mt-2 mb-0">
+                      {{ dashboardTotals.included }} of
+                      {{ dashboardTotals.total }} completed orders included.
+                    </p>
 
-            <template v-else-if="!inventoryError">
-              <p v-if="fewestProducts.length === 0" class="text-secondary">
-                No products with a calculated capacity to show.
+                    <p
+                      v-if="dashboardTotals.excluded > 0"
+                      class="small mt-2 mb-0"
+                    >
+                      {{ dashboardTotals.excluded }} order(s) excluded because
+                      cost or price details are unavailable.
+                      <RouterLink to="/products">
+                        Review product costs </RouterLink
+                      >.
+                    </p>
+                  </template>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- Profit line graph -->
+
+          <details v-if="dashboardVisible.includes('trend')" class="card mt-2">
+            <summary class="home-profit-summary">
+              <span class="fw-semibold small"> Profit over time (chart) </span>
+              <span class="small text-secondary"> Click to expand </span>
+            </summary>
+
+            <div class="card-body">
+              <h3 class="h6">Estimated profit over time</h3>
+
+              <p class="small text-secondary">
+                {{
+                  dashboardPeriod === "month"
+                    ? "Profit within each weekly date range."
+                    : "Profit within each month."
+                }}
+                Completed orders grouped by scheduled fulfilment date, using
+                current product costs.
               </p>
 
-              <ul v-else class="list-group list-group-flush">
-                <li
-                  v-for="item in fewestProducts"
-                  :key="item.key"
-                  class="list-group-item px-0"
-                >
-                  <div class="d-flex justify-content-between">
-                    <span>{{ item.name }}</span>
-                    <strong :class="{ 'text-danger': item.canMake === 0 }">
-                      {{ item.canMake }}
-                    </strong>
-                  </div>
+              <p v-if="dashboardTrend.length === 0" class="text-secondary">
+                No dated completed orders in this period.
+              </p>
 
-                  <small v-if="item.limitedBy" class="text-secondary">
-                    Limited by {{ item.limitedBy }}
-                  </small>
+              <template v-else>
+                <p v-if="!dashboardGraph" class="text-secondary">
+                  No profit figures are available for elapsed ranges. Check the
+                  cost coverage in the figures below.
+                </p>
 
-                  <div
-                    v-for="warning in item.warnings"
-                    :key="warning"
-                    class="small home-warning"
+                <div v-else class="overflow-auto">
+                  <svg
+                    viewBox="0 0 640 230"
+                    class="profit-line-chart"
+                    role="img"
+                    aria-labelledby="profit-chart-title profit-chart-description"
                   >
-                    {{ warning }}
-                  </div>
-                </li>
-              </ul>
-            </template>
+                    <title id="profit-chart-title">
+                      Estimated
+                      {{ dashboardPeriod === "month" ? "weekly" : "monthly" }}
+                      gross profit in Singapore dollars
+                    </title>
 
-            <RouterLink to="/products" class="home-link d-inline-block mt-3">
-              See all
-            </RouterLink>
-          </div>
-        </div>
+                    <desc id="profit-chart-description">
+                      Exact values and cost coverage are available below. Future
+                      ranges are blank. Missing profit figures break the line.
+                      Empty elapsed ranges show zero.
+                    </desc>
+
+                    <!-- Grid and currency labels -->
+                    <g v-for="tick in dashboardGraph.ticks" :key="tick.value">
+                      <line
+                        x1="100"
+                        x2="580"
+                        :y1="tick.y"
+                        :y2="tick.y"
+                        class="profit-chart-grid"
+                      />
+
+                      <text
+                        x="90"
+                        :y="tick.y + 4"
+                        text-anchor="end"
+                        class="profit-chart-label"
+                      >
+                        {{ dashboardMoney(tick.value) }}
+                      </text>
+                    </g>
+
+                    <!-- Zero baseline -->
+                    <line
+                      x1="100"
+                      x2="580"
+                      :y1="dashboardGraph.zeroY"
+                      :y2="dashboardGraph.zeroY"
+                      class="profit-chart-zero"
+                    />
+
+                    <!-- Profit line -->
+                    <path :d="dashboardGraph.path" class="profit-chart-line" />
+
+                    <!-- Points and date labels -->
+                    <g
+                      v-for="(point, index) in dashboardGraph.points"
+                      :key="point.key"
+                    >
+                      <circle
+                        v-if="point.y !== null"
+                        :cx="point.x"
+                        :cy="point.y"
+                        r="5"
+                        class="profit-chart-point"
+                      >
+                        <title>
+                          {{ point.label }}
+                          {{ point.ongoing ? "(current)" : "" }}:
+                          {{ dashboardMoney(point.profit) }}.
+                          {{ point.included }} of {{ point.total }}
+                          orders included.
+                        </title>
+                      </circle>
+
+                      <text
+                        v-if="
+                          dashboardPeriod === 'month' ||
+                          index === 0 ||
+                          index === dashboardGraph.points.length - 1 ||
+                          index %
+                            Math.ceil(dashboardGraph.points.length / 5) ===
+                            0
+                        "
+                        :x="point.x"
+                        y="210"
+                        text-anchor="middle"
+                        class="profit-chart-label"
+                      >
+                        {{ point.label }}{{ point.ongoing ? "*" : "" }}
+                      </text>
+                    </g>
+                  </svg>
+                </div>
+
+                <p class="small text-secondary mt-2">
+                  * Ongoing range. Future ranges are blank. Ranges with no
+                  completed orders show zero once they begin. Missing costs may
+                  make figures partial or unavailable.
+                </p>
+
+                <!-- Accessible exact figures -->
+                <details class="mt-2">
+                  <summary class="small">
+                    {{
+                      dashboardPeriod === "month"
+                        ? "View weekly figures"
+                        : "View monthly figures"
+                    }}
+                  </summary>
+
+                  <div class="table-responsive mt-2">
+                    <table class="table align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th scope="col">Period</th>
+                          <th scope="col">Estimated profit</th>
+                          <th scope="col">Orders included</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        <tr v-for="row in dashboardTrend" :key="row.key">
+                          <th scope="row">
+                            {{ row.label }}
+                            <span v-if="row.ongoing" class="small fw-normal">
+                              (current)
+                            </span>
+                          </th>
+
+                          <td>
+                            <template v-if="row.future"> Not started </template>
+
+                            <template v-else>
+                              {{ dashboardMoney(row.profit) }}
+                              <span v-if="row.excluded && row.included">
+                                · partial
+                              </span>
+                            </template>
+                          </td>
+
+                          <td>
+                            <span v-if="row.future">—</span>
+                            <span v-else>
+                              {{ row.included }} / {{ row.total }}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </template>
+
+              <p v-if="dashboardUndatedCount > 0" class="small mt-2 mb-0">
+                {{ dashboardUndatedCount }} order(s) without valid fulfilment
+                dates are excluded.
+              </p>
+            </div>
+          </details>
+        </template>
       </div>
-    </div>
+    </section>
   </section>
+  <BackToTop />
 </template>
 
 <style src="../assets/home.css"></style>
