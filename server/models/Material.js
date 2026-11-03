@@ -39,7 +39,7 @@ materialSchema.index({ seller: 1, name: 1 }, { unique: true });
 // Calculated every time it's read, so it can never be out of date.
 materialSchema.virtual('isLow').get(function () {
   if (this.trackingMode === 'level') return this.level === 'low';
-  return this.lowStockThreshold != null && this.quantity <= this.lowStockThreshold;
+  return this.lowStockThreshold != null && this.quantity < this.lowStockThreshold;
 });
 
 export default mongoose.model('Material', materialSchema);

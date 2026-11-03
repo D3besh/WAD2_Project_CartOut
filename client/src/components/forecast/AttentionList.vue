@@ -65,7 +65,8 @@ const rows = computed(() => [
 function onButton(key) {
   if (key.startsWith('short:')) {
     // Materials page, with this material highlighted in "What to buy"
-    router.push({ path: '/materials', query: { highlight: key.slice('short:'.length) } });
+    // key = 'short:<materialId>' (or 'short:<materialId>:more' when two rows share a material)
+    router.push({ path: '/materials', query: { highlight: key.split(':')[1] } });
   } else if (key === 'restock-week') {
     router.push('/materials');
   } else if (key === 'all-good') {

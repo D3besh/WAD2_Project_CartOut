@@ -34,6 +34,9 @@ export function weekdayName(key) {
 
 // Amounts in a unit people buy in: 30750 g → "31 kg", 2500 ml → "2.5 L", 350 cm → "3.5 m", 12 pieces → "12 pieces"
 export function formatAmount(amount, unit) {
+  // Stock can go below 0 when an order is saved without enough materials.
+  // Show that as 0 (the material still appears as "Low now" in What to buy).
+  amount = Math.max(0, amount);
   if (unit === 'cm' && amount >= 100) {
     let metres = amount / 100;
     // 10 m and above: whole number. Below 10: one decimal, e.g. 3.5
@@ -60,7 +63,10 @@ export function buildRestockPlan(forecast) {
 
   let rows = [];
   for (let m of forecast.materials) {
-    let alreadyLow = m.lowStockThreshold != null && m.quantity <= m.lowStockThreshold;
+    // Already low = below the seller's low-stock level, OR none left at all.
+    // (The second part matters for materials with no low-stock level set:
+    //  without it, a material at 0 or below 0 would never appear in What to buy.)
+    let alreadyLow = m.quantity <= 0 || (m.lowStockThreshold != null && m.quantity <= m.lowStockThreshold);
     let lowIn = m.runsLowOn ? daysBetween(forecast.today, m.runsLowOn) : null;
     let outIn = m.runsOutOn ? daysBetween(forecast.today, m.runsOutOn) : null;
     if (!alreadyLow && lowIn === null && outIn === null) {
@@ -276,15 +282,19 @@ export function tomorrowShortages(forecast, products, materials) {
       if (f === null) continue;
       let result = calculateCanMake(fullRecipe(product, option.variant), materials);
       if (result.canMake === null) continue; // nothing countable in the recipe
-      let short = f.extra - result.canMake;
-      if (short > 0) {
-        let limiting = materials.find((m) => m.name === result.limitedBy);
+      let short = Math.max(0, f.extra - result.canMake);
+      let limiting = materials.find((m) => m.name === result.limitedBy);
+      // Orders can be saved without enough stock (New order warns but allows it), so the
+      // limiting material can be below 0. Then tomorrow's ORDERED items can't all be made either.
+      let ordersShort = f.orders > 0 && limiting !== undefined && limiting.quantity < 0;
+      if (short > 0 || ordersShort) {
         list.push({
           name: variants.length > 0 ? product.name + ' (' + option.name + ')' : product.name,
           orders: f.orders,
           extra: f.extra,
           canMake: result.canMake,
           short: short,
+          ordersShort: ordersShort,
           limitedBy: result.limitedBy,
           limitedById: limiting ? limiting.id : null,
         });
@@ -348,13 +358,22 @@ export function forecastAttentionItems(forecast, products, materials) {
 
   // 1. Not enough stock for tomorrow (one row per product we may be short of)
   let shortages = tomorrowShortages(forecast, products, materials);
+  let usedKeys = [];
   for (let s of shortages) {
+    // Two products can be short of the same material, and each row needs its own key
+    let key = 'short:' + s.limitedById;
+    while (usedKeys.includes(key)) key += ':more';
+    usedKeys.push(key);
     rows.push({
-      key: 'short:' + s.limitedById,
+      key: key,
       tone: 'red',
       icon: '⚠️',
-      title: 'Short ' + s.short + ' ' + s.name + ' tomorrow',
-      text: (s.canMake === 0 ? 'Out of ' : 'Not enough ') + s.limitedBy,
+      title: s.ordersShort
+        ? 'Need more ' + s.limitedBy + ' for ' + s.name + ' tomorrow'
+        : 'Short ' + s.short + ' ' + s.name + ' tomorrow',
+      text: s.ordersShort
+        ? 'Orders already logged need more ' + s.limitedBy + ' than you have'
+        : (s.canMake === 0 ? 'Out of ' : 'Not enough ') + s.limitedBy,
       actionLabel: 'What to buy',
       primary: true,
     });
