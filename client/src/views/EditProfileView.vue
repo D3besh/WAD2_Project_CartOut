@@ -135,9 +135,11 @@ onMounted(loadProfile)
 </script>
 
 <template>
-  <RouterLink to="/profile" class="pv-back">← Back to profile</RouterLink>
+  <RouterLink to="/profile" class="pv-btn text-decoration-none">
+    &lt; Back to Profile
+  </RouterLink>
 
-  <div class="pv-page">
+  <div class="pv-page mt-4">
     <p v-if="loading">Loading...</p>
 
     <template v-else-if="user">
@@ -340,29 +342,66 @@ onMounted(loadProfile)
   margin: 0.5rem 0 0;
 }
 
-.pv-danger { border-color: #fecaca; }
-.pv-btn--danger { background: #dc2626; }
-.pv-btn--ghost { background: #fff; color: #111827; border: 1px solid #d1d5db; }
+.pv-danger {
+  border-color: #fecaca;
+}
+
+.pv-btn--danger {
+  background: #dc2626;
+  margin-top: 0.5rem;
+}
+
+.pv-btn--ghost {
+  background: #fff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+}
 
 .pv-overlay {
-  position: fixed; inset: 0; z-index: 100;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
   background: rgba(0, 0, 0, 0.45);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 1rem;
 }
+
 .pv-dialog {
-  width: 100%; max-width: 360px;
-  background: #fff; color: #111827;
-  border-radius: 12px; padding: 1.25rem;
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  color: #111827;
+  border-radius: 12px;
+  padding: 1.25rem;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
 }
-.pv-dialog h2 { margin: 0 0 0.5rem; font-size: 1.15rem; }
-.pv-dialog p { margin: 0 0 0.75rem; color: #4b5563; }
-.pv-dialog input {
-  display: block; width: 100%; box-sizing: border-box;
-  padding: 0.5rem; margin-bottom: 0.75rem;
-  border: 1px solid #d1d5db; border-radius: 6px; font: inherit;
-}
-.pv-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 
+.pv-dialog h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.pv-dialog p {
+  margin: 0 0 0.75rem;
+  color: #4b5563;
+}
+
+.pv-dialog input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.pv-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
 </style>
