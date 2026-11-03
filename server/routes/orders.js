@@ -419,6 +419,10 @@ router.post('/:id/refund', async (req, res, next) => {
     if (order.status === 'cancelled') {
       return res.status(400).json({ message: 'Cancelled orders cannot be refunded. Refund before cancelling.' });
     }
+    // Completed orders are final: no refunds
+    if (order.status === 'completed') {
+      return res.status(400).json({ message: 'Completed orders cannot be refunded.' });
+    }
 
 
     const refundable = amountPaid(order) - order.refundAmount - order.forfeitedAmount;

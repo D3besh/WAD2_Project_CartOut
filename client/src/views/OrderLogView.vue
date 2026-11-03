@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import OrderCard from '../components/OrderCard.vue';
 import FloatingAddButton from '../components/FloatingAddButton.vue';
+import Pager from '../components/Pager.vue';
 import MaterialsNeededCard from '../components/MaterialsNeededCard.vue';
 
 
@@ -156,47 +157,10 @@ const pagedOrders = computed(() => {
   return visibleOrders.value.slice(start, start + PAGE_SIZE);
 });
 
-// For "Showing 13–23 of 23 orders"
-const showingFrom = computed(() => (visibleOrders.value.length === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1));
-const showingTo = computed(() => Math.min(page.value * PAGE_SIZE, visibleOrders.value.length));
-
-// The page buttons: at most 5 numbers, kept around the current page.
-//   page 1 of 35  → 1 2 3 4 5
-//   page 10 of 35 → 8 9 10 11 12
-//   page 35 of 35 → 31 32 33 34 35
-const MAX_PAGE_BUTTONS = 5;
-
-const pageNumbers = computed(() => {
-  const total = totalPages.value;
-
-  // try to put the current page in the middle
-  let start = page.value - Math.floor(MAX_PAGE_BUTTONS / 2);
-  let end = start + MAX_PAGE_BUTTONS - 1;
-
-  // near the start: don't go below page 1
-  if (start < 1) {
-    start = 1;
-    end = Math.min(total, MAX_PAGE_BUTTONS);
-  }
-
-  // near the end: don't go past the last page
-  if (end > total) {
-    end = total;
-    start = Math.max(1, total - MAX_PAGE_BUTTONS + 1);
-  }
-
-  const list = [];
-  for (let i = start; i <= end; i++) {
-    list.push(i);
-  }
-  return list;
+// Go back to the top of the list when the page changes (useful on phones)
+watch(page, () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
-
-function goToPage(n) {
-  if (n < 1 || n > totalPages.value) return;
-  page.value = n;
-  window.scrollTo({ top: 0, behavior: 'smooth' }); // useful on phones
-}
 
 const hasChanges = computed(
   () =>
@@ -530,53 +494,8 @@ watch(totalPages, (n) => {
         </div>
       </TransitionGroup>
 
-      <!-- Paging -->
-      <nav
-        class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-2 mt-3"
-        aria-label="Order pages"
-      >
-        <span class="small text-muted text-nowrap order-2 order-md-1">
-          Showing <strong class="text-body">{{ showingFrom }}–{{ showingTo }}</strong>
-          of {{ visibleOrders.length }} {{ visibleOrders.length === 1 ? 'order' : 'orders' }}
-        </span>
-
-        <ul v-if="totalPages > 1" class="pagination pagination-sm flex-wrap justify-content-center mb-0 order-1 order-md-2">
-          <!-- First page -->
-          <li class="page-item" :class="{ disabled: page === 1 }">
-            <button type="button" class="page-link" aria-label="First page" @click="goToPage(1)">«</button>
-          </li>
-          <!-- Previous page -->
-          <li class="page-item" :class="{ disabled: page === 1 }">
-            <button type="button" class="page-link" aria-label="Previous page" @click="goToPage(page - 1)">‹</button>
-          </li>
-
-          <!-- Up to 5 page numbers around the current page -->
-          <li
-            v-for="n in pageNumbers"
-            :key="n"
-            class="page-item"
-            :class="{ active: n === page }"
-          >
-            <button
-              type="button"
-              class="page-link"
-              :aria-current="n === page ? 'page' : null"
-              @click="goToPage(n)"
-            >
-              {{ n }}
-            </button>
-          </li>
-
-          <!-- Next page -->
-          <li class="page-item" :class="{ disabled: page === totalPages }">
-            <button type="button" class="page-link" aria-label="Next page" @click="goToPage(page + 1)">›</button>
-          </li>
-          <!-- Last page -->
-          <li class="page-item" :class="{ disabled: page === totalPages }">
-            <button type="button" class="page-link" aria-label="Last page" @click="goToPage(totalPages)">»</button>
-          </li>
-        </ul>
-      </nav>
+      <!-- Paging: the shared Pager component (also used on Materials and Products) -->
+      <Pager v-model="page" :total="visibleOrders.length" :per-page="PAGE_SIZE" item-name="orders" />
     </template>
 
     <div v-else-if="isSearching" class="empty-state">
@@ -636,27 +555,6 @@ watch(totalPages, (n) => {
   color: var(--sk-muted);
   background: var(--sk-bg);
 }
-
-/* ---- Paging buttons in the brand colour ---- */
-.pagination {
-  --bs-pagination-color: var(--sk-text);
-  --bs-pagination-hover-color: var(--sk-text);
-  --bs-pagination-hover-bg: var(--sk-brand-soft);
-  --bs-pagination-focus-color: var(--sk-text);
-  --bs-pagination-focus-box-shadow: 0 0 0 0.2rem var(--sk-brand-soft);
-  --bs-pagination-active-bg: var(--sk-brand);
-  --bs-pagination-active-border-color: var(--sk-brand);
-  --bs-pagination-border-color: var(--sk-border);
-  gap: 0.35rem;
-}
-
-.pagination .page-link {
-  min-width: 2.1rem;
-  text-align: center;
-  border-radius: var(--sk-radius-btn) !important;
-  font-weight: 600;
-}
-
 
 /* ---- Bulk action bar ---- */
 .bulk-bar {

@@ -39,7 +39,10 @@ const depositLeft = computed(() =>
 
 const canCancel = computed(() => !isCancelled.value && props.order.status !== 'completed');
 // Refund first, then cancel: a cancelled order can't be refunded
-const canRefund = computed(() => refundable.value > 0 && !isCancelled.value);
+// No refunds once an order is cancelled or completed
+const canRefund = computed(
+  () => refundable.value > 0 && !isCancelled.value && props.order.status !== 'completed'
+);
 
 function open(which) {
   mode.value = which;
