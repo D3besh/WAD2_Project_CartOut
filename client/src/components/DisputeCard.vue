@@ -32,8 +32,17 @@ const refundable = computed(
   () => paid.value - (props.order.refundAmount || 0) - (props.order.forfeitedAmount || 0)
 );
 
+// What's left of the deposit after any refund (this is what "Keep the deposit" keeps)
+const depositLeft = computed(() =>
+  Math.max(0, (props.order.depositAmount || 0) - (props.order.refundAmount || 0))
+);
+
 const canCancel = computed(() => !isCancelled.value && props.order.status !== 'completed');
-const canRefund = computed(() => refundable.value > 0);
+// Refund first, then cancel: a cancelled order can't be refunded
+// No refunds once an order is cancelled or completed
+const canRefund = computed(
+  () => refundable.value > 0 && !isCancelled.value && props.order.status !== 'completed'
+);
 
 function open(which) {
   mode.value = which;
@@ -42,7 +51,7 @@ function open(which) {
   amount.value = which === 'refund' ? refundable.value : '';
   // Ready orders are already made, so materials are used and deposit is kept.
   materialsUsed.value = isReady.value;
-  forfeitDeposit.value = isReady.value;
+  forfeitDeposit.value = isReady.value && depositLeft.value > 0;
 }
 
 function submit() {
@@ -91,8 +100,11 @@ function submit() {
       <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
       Refunded {{ formatMoney(order.refundAmount) }}: {{ order.refundReason }}
     </p>
-    <p class="text-muted small mb-3">
+    <p v-if="!isCancelled" class="text-muted small mb-3">
       Paid so far: {{ formatMoney(paid) }} · Can still refund: {{ formatMoney(refundable) }}
+    </p>
+    <p v-else class="text-muted small mb-3">
+      Paid so far: {{ formatMoney(paid) }} · Cancelled orders can't be refunded.
     </p>
 
     <!-- Buttons -->
@@ -140,7 +152,7 @@ function submit() {
             Materials already used / prepared (do NOT return to inventory)
           </label>
         </div>
-        <div v-if="hasDeposit" class="form-check">
+        <div v-if="hasDeposit && depositLeft > 0" class="form-check">
           <input
             id="forfeit"
             v-model="forfeitDeposit"
@@ -149,11 +161,14 @@ function submit() {
             :disabled="isReady"
           />
           <label class="form-check-label small" for="forfeit">
-            Keep the deposit ({{ formatMoney(order.depositAmount) }}) to cover costs
+            Keep the deposit ({{ formatMoney(depositLeft) }}) to cover costs
           </label>
         </div>
         <p v-if="isReady" class="text-muted small mb-1">
           This order is ready, so the materials are used and the deposit is kept.
+        </p>
+        <p v-if="refundable > 0" class="text-warning-emphasis small mb-1">
+          Need to give money back? Refund it first. Refunds aren't possible after cancelling.
         </p>
         <p class="small mb-0" :class="materialsUsed ? 'text-danger' : 'text-success'">
           {{ materialsUsed

@@ -69,7 +69,7 @@ export function calculateCanMake(recipe, materials) {
       continue; // skip to the next recipe line
     }
 
-    let possible = Math.floor(material.quantity / line.amountPerUnit);
+    let possible = Math.max(0, Math.floor(material.quantity / line.amountPerUnit));
 
     if (possible < canMake) {
       canMake = possible;

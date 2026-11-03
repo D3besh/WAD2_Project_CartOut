@@ -36,7 +36,7 @@ defineEmits(['restock', 'edit']);
         Edit
       </button>
       <button type="button" class="btn btn-primary btn-sm" @click="$emit('restock', material)">
-        Restock
+        Mark as bought
       </button>
     </div>
 

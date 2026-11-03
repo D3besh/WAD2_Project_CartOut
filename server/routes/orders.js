@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { deductMaterials, restoreMaterials, checkOrder } from '../services/inventory.js';
 import { parseOrder } from '../services/extraction.js';
 import { notifyCustomer } from '../services/notify.js';
+import { buildMessage, messageType } from '../services/messages.js';
+import User from '../models/User.js';
 
 
 const router = Router();
@@ -238,6 +240,28 @@ router.get('/:id', async (req, res, next) => {
 });
 
 
+// GET /api/orders/:id/message
+// The customer message for this order, for the "Copy message" button.
+// Same text as the emails (built in services/messages.js).
+router.get('/:id/message', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order id.' });
+    }
+    const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId })
+      .populate('items.product');
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+    const seller = await User.findById(req.session.userId);
+    const shopName = seller ? seller.shopName : 'CartOut';
+    const message = buildMessage(order, shopName, messageType(order));
+    res.json(message); // { subject, text }
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 // PUT /api/orders/:id
 router.put('/:id', notImplemented);
 
@@ -356,8 +380,9 @@ router.post('/:id/cancel', async (req, res, next) => {
     order.materialsWasted = used;
 
 
+    // Keep what's left of the deposit (any part already refunded is not kept)
     if (forfeit && order.paymentStatus === 'deposit') {
-      order.forfeitedAmount = order.depositAmount;
+      order.forfeitedAmount = Math.max(0, order.depositAmount - order.refundAmount);
     }
 
 
@@ -390,6 +415,15 @@ router.post('/:id/refund', async (req, res, next) => {
     const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId });
     if (!order) return res.status(404).json({ message: 'Order not found.' });
 
+    // Refund first, then cancel: a cancelled order can't be refunded
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ message: 'Cancelled orders cannot be refunded. Refund before cancelling.' });
+    }
+    // Completed orders are final: no refunds
+    if (order.status === 'completed') {
+      return res.status(400).json({ message: 'Completed orders cannot be refunded.' });
+    }
+
 
     const refundable = amountPaid(order) - order.refundAmount - order.forfeitedAmount;
     if (amount > refundable) {
@@ -402,6 +436,7 @@ router.post('/:id/refund', async (req, res, next) => {
     order.refundedAt = new Date();
     await order.save();
     await order.populate('items.product');
+    await notifyCustomer(order, 'refund', amount); // refund confirmation email
     res.json({ order });
   } catch (err) {
     next(err);
@@ -453,6 +488,69 @@ router.patch('/:id/payment', async (req, res, next) => {
     res.json({ order });
   } catch (err) {
     next(err);
+  }
+});
+
+
+
+import { requireAuth } from '../middleware/requireAuth.js';
+
+router.get('/customers/search', requireAuth, async (req, res) => {
+  try {
+    const search = req.query.name?.trim();
+
+    if (!search || search.length < 2) {
+      return res.json([]);
+    }
+
+    // Escape special regex characters
+    const escapedSearch = search.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    );
+
+    // Search only this seller's past orders
+    const orders = await Order.find({
+      seller: req.user.id,
+      customerName: {
+        $regex: escapedSearch,
+        $options: 'i'
+      }
+    })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select('customerName customerContact customerEmail deliveryAddress platform');
+
+    // Remove duplicate customer records
+    const uniqueCustomers = new Map();
+
+    for (const order of orders) {
+      // Prefer phone number, then email.
+      // If neither exists, keep the order as a separate result.
+      const key = order.customerContact?.trim()
+        ? `phone:${order.customerContact.trim()}`
+        : order.customerEmail?.trim()
+          ? `email:${order.customerEmail.trim().toLowerCase()}`
+          : `order:${order._id}`;
+
+      if (!uniqueCustomers.has(key)) {
+        uniqueCustomers.set(key, {
+          customerName: order.customerName,
+          customerContact: order.customerContact,
+          customerEmail: order.customerEmail,
+          deliveryAddress: order.deliveryAddress,
+          platform: order.platform
+        });
+      }
+    }
+
+    res.json([...uniqueCustomers.values()].slice(0, 10));
+
+  } catch (error) {
+    console.error('Customer search error:', error);
+    res.status(500).json({
+      message: 'Failed to search customers'
+    });
   }
 });
 
