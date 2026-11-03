@@ -25,9 +25,23 @@ const banner = ref(null);
 
 // Smoothly scroll back to the top so the banner and page title are in view.
 // People who turned off animations in their system settings get an instant jump.
-function scrollToTop() {
+async function scrollToTop() {
+  // Wait until Vue has finished changing the page (form cleared, banner shown).
+  // Some browsers drop a smooth scroll if the page changes while it's moving.
+  await nextTick();
+
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  const startY = window.scrollY;
+  window.scrollTo({ top: 0, behavior: reduceMotion ? 'instant' : 'smooth' });
+
+  // Safety net: if the page hasn't moved at all after 1 s, the smooth scroll was
+  // dropped, so jump instead. ('instant', not 'auto': Bootstrap makes 'auto' smooth.)
+  // Only when nothing moved, so we never pull back a seller who scrolled down themselves.
+  setTimeout(() => {
+    if (window.scrollY === startY && startY > 0) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, 1000);
 }
 
 // ---------- "now", for blocking past due dates ----------
