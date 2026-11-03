@@ -92,6 +92,16 @@ function selectCustomer(customer) {
   customers.value = [];
 }
 
+async function createOrder(order) {
+  try {
+    const response = await axios.post('/api/orders', order);
+    return response.data;
+  } catch (err) {
+    console.error(err.response?.data?.message || err.message);
+    throw err;
+  }
+}
+
 function addItem() {
   form.items.push(newItem());
 }
@@ -102,7 +112,6 @@ function removeItem(index) {
 
 // ---------- variants (from the Products page) ----------
 function findProduct(productId) {
-  console.log(products.value)
   return products.value.find((p) => p._id === productId);
 }
 
