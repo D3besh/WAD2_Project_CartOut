@@ -67,3 +67,224 @@
 .profit-chart-point {
   fill: currentColor;
 }
+
+
+/* =========================================
+   Home dashboard — Compact weekly forecast
+   ========================================= */
+
+.home-week-scroll {
+  width: 100%;
+  min-width: 0;
+}
+
+.home-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.home-week-day {
+  min-width: 0;
+  padding: 0.5rem;
+  background: var(--sk-surface);
+  border: 1px solid var(--sk-border);
+  border-radius: 8px;
+  font-size: 0.7rem;
+}
+
+/* Highlight today instead of the busiest day */
+.home-week-day--today {
+  border: 2px solid var(--sk-brand);
+  background: var(--sk-brand-soft);
+}
+
+.home-week-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 30px;
+  margin: 0.55rem 0 0.3rem;
+}
+
+.home-week-bar {
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+}
+
+.home-week-bar--ordered {
+  height: 12px;
+  background: var(--sk-brand);
+}
+
+.home-week-bar--expected {
+  height: 12px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--sk-brand-soft),
+    var(--sk-brand-soft) 3px,
+    var(--sk-brand-muted) 4px,
+    var(--sk-brand-muted) 5px
+  );
+}
+
+.home-week-details {
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+
+/* =========================================
+   Home dashboard — Attention alerts
+   ========================================= */
+
+.home-attention-item {
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: var(--sk-brand-soft);
+}
+
+.home-attention-item--red {
+  background: var(--sk-danger-soft);
+}
+
+.home-attention-item--amber {
+  background: var(--sk-warn-soft);
+}
+
+.home-attention-item--green {
+  background: var(--sk-ok-soft);
+}
+
+.home-attention-item--purple {
+  background: var(--sk-brand-soft);
+}
+
+.home-attention-item .btn {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.65rem;
+}
+
+.home-attention-item .small {
+  line-height: 1.4;
+}
+
+/* =========================================
+   Home dashboard — Compact alignment
+   ========================================= */
+
+/* Align dashboard columns */
+.home-week-day {
+  padding: 0.45rem 0.35rem;
+}
+
+.home-week-chart {
+  height: 22px;
+  margin: 0.3rem 0 0.2rem;
+}
+
+.home-week-details {
+  font-size: 0.66rem;
+  line-height: 1.3;
+}
+
+.home-week-day .status {
+  font-size: 0.62rem;
+  padding: 0.15rem 0.4rem;
+}
+
+/* Keep alert cards compact */
+.home-attention-item {
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.4rem !important;
+}
+
+.home-attention-item .small {
+  line-height: 1.3;
+}
+
+
+/* Desktop: seven days in one row */
+.home-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* Tablets: four cards per row */
+@media (min-width: 576px) and (max-width: 991.98px) {
+  .home-week-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Phones: two cards per row */
+@media (max-width: 575.98px) {
+  .home-week-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-week-day {
+    padding: 0.65rem;
+  }
+
+  .home-week-details {
+    font-size: 0.75rem;
+  }
+}
+
+/* Reduce spacing below navbar on Home page only to reduce scrolls */
+.app-main:has([data-testid="page-home"]) {
+  padding-top: 1.5rem;
+}
+
+/* =========================================
+   Home dashboard — Collapsible profit graph
+   ========================================= */
+
+.home-profit-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.home-profit-summary::-webkit-details-marker {
+  display: none;
+}
+
+.home-profit-summary::before {
+  content: "▸";
+  color: var(--sk-brand);
+  font-size: 0.85rem;
+}
+
+
+
+details[open] > .home-profit-summary::before {
+  content: "▾";
+}
+
+.home-profit-summary:hover {
+  background: var(--sk-brand-soft);
+}
+
+.home-profit-summary:focus-visible {
+  outline: 2px solid var(--sk-brand);
+  outline-offset: -2px;
+}
+/* Keep dashboard content within its column */
+[data-testid="page-home"] .row > [class*="col-"] {
+  min-width: 0;
+}
+
+.home-week-day,
+.home-attention-item {
+  overflow-wrap: anywhere;
+}
+
