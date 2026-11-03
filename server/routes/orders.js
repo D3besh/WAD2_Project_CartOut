@@ -488,6 +488,69 @@ router.patch('/:id/payment', async (req, res, next) => {
 });
 
 
+
+import { requireAuth } from '../middleware/requireAuth.js';
+
+router.get('/customers/search', requireAuth, async (req, res) => {
+  try {
+    const search = req.query.name?.trim();
+
+    if (!search || search.length < 2) {
+      return res.json([]);
+    }
+
+    // Escape special regex characters
+    const escapedSearch = search.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    );
+
+    // Search only this seller's past orders
+    const orders = await Order.find({
+      seller: req.user.id,
+      customerName: {
+        $regex: escapedSearch,
+        $options: 'i'
+      }
+    })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select('customerName customerContact customerEmail deliveryAddress platform');
+
+    // Remove duplicate customer records
+    const uniqueCustomers = new Map();
+
+    for (const order of orders) {
+      // Prefer phone number, then email.
+      // If neither exists, keep the order as a separate result.
+      const key = order.customerContact?.trim()
+        ? `phone:${order.customerContact.trim()}`
+        : order.customerEmail?.trim()
+          ? `email:${order.customerEmail.trim().toLowerCase()}`
+          : `order:${order._id}`;
+
+      if (!uniqueCustomers.has(key)) {
+        uniqueCustomers.set(key, {
+          customerName: order.customerName,
+          customerContact: order.customerContact,
+          customerEmail: order.customerEmail,
+          deliveryAddress: order.deliveryAddress,
+          platform: order.platform
+        });
+      }
+    }
+
+    res.json([...uniqueCustomers.values()].slice(0, 10));
+
+  } catch (error) {
+    console.error('Customer search error:', error);
+    res.status(500).json({
+      message: 'Failed to search customers'
+    });
+  }
+});
+
+
 // DELETE /api/orders/:id
 // Not used for disputes: cancel keeps a record instead of deleting.
 router.delete('/:id', notImplemented);
