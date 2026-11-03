@@ -671,25 +671,36 @@ test.describe('Order log: paging and filters', () => {
 // Wrong input is refused
 // ---------------------------------------------------------------------------
 test.describe('Wrong input', () => {
-  test('27. Log order: Save stays disabled until required fields are filled', async ({ page }) => {
+  test('27. Log order: missing fields turn red only after Save is pressed', async ({ page }) => {
     await page.goto('/orders/new');
     const save = page.getByRole('button', { name: 'Save order' });
 
-    // Empty form
-    await expect(save).toBeDisabled();
+    // Empty form: the footer lists what's left, but nothing is red yet,
+    // and Save can be pressed (pressing it is what shows the red fields)
+    await expect(save).toBeEnabled();
     await expect(page.getByText(/required fields? left/)).toBeVisible();
+    await expect(page.locator('.is-invalid')).toHaveCount(0);
 
-    // Fill everything except the due date
+    // Fill everything except the due date, then try to save
     await page.locator('#customerName').fill(uniqueName('Incomplete'));
     await page.locator('#product-0').selectOption({ label: 'E2E Chocolate cookies' });
     await page.locator('#qty-0').fill('1');
     await page.locator('#price').fill('20');
     await page.locator('#fulfilmentMethod').selectOption('self-collect');
-    await expect(save).toBeDisabled();
     await expect(page.getByText(/required field left: Due date/)).toBeVisible();
+    await save.click();
 
+    // Only the due date is red, and nothing was saved
+    await expect(page.locator('#dueAt')).toHaveClass(/is-invalid/);
+    await expect(page.locator('#customerName')).not.toHaveClass(/is-invalid/);
+    await expect(page.locator('.action-banner--error')).toContainText('Due date');
+    const orders = await (await page.request.get('/api/orders')).json();
+    expect(orders).toHaveLength(0);
+
+    // Filling it clears the red straight away
     await page.locator('#dueAt').fill(dateTimeInput(2));
-    await expect(save).toBeEnabled();
+    await expect(page.locator('#dueAt')).not.toHaveClass(/is-invalid/);
+    await expect(page.getByText('All set. Ready to save.')).toBeVisible();
   });
 
   test('28. Log order: delivery needs an address', async ({ page }) => {
@@ -704,11 +715,15 @@ test.describe('Wrong input', () => {
     await page.locator('#fulfilmentMethod').selectOption('delivery');
 
     await expect(page.locator('#deliveryAddress')).toBeVisible();
-    await expect(save).toBeDisabled();
-    await expect(page.getByText(/Delivery address/).last()).toBeVisible();
+    await expect(page.getByText(/required field left: Delivery address/)).toBeVisible();
+
+    // Trying to save without an address turns the address field red
+    await save.click();
+    await expect(page.locator('#deliveryAddress')).toHaveClass(/is-invalid/);
 
     await page.locator('#deliveryAddress').fill('Blk 123 Bedok North Ave 1, #01-01');
-    await expect(save).toBeEnabled();
+    await expect(page.locator('#deliveryAddress')).not.toHaveClass(/is-invalid/);
+    await expect(page.getByText('All set. Ready to save.')).toBeVisible();
 
     // The server refuses a delivery order without an address too
     const product = (await (await page.request.get('/api/products')).json())[0];
