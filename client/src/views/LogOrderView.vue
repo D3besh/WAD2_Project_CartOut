@@ -4,8 +4,6 @@
 //   - "Extract order details" from the pasted message, calling extractOrder()
 //   - run checkOrder() and warn if the order can't be fulfilled
 import { ref, reactive, computed, watch, onMounted } from 'vue';
-import { api } from '../services/api.js';
-import { createOrder } from '../services/orders.js';
 import axios from 'axios';
 
 const products = ref([]);
@@ -38,13 +36,61 @@ const saving = ref(false);
 const saveError = ref('');
 const savedOrder = ref(null);
 
+// ---------- customer search ----------
+const customers = ref([]);
+const showCustomers = ref(false);
+const searchingCustomers = ref(false);
+
 onMounted(async () => {
   try {
-    products.value = await api('/products');
+    const response = await axios.get('/api/products');
+    products.value = response.data
+    console.log("IMPTTT", products.value)
   } catch (err) {
     productsError.value = `Couldn't load products: ${err.message}`;
   }
 });
+
+async function searchCustomers() {
+  const name = form.customerName.trim();
+
+  if (name.length < 2) {
+    customers.value = [];
+    showCustomers.value = false;
+    return;
+  }
+
+  searchingCustomers.value = true;
+
+  try {
+    const response = await axios.get(
+      '/api/orders/customers/search',
+      {
+        params: { name }
+      }
+    );
+
+    customers.value = response.data;
+    showCustomers.value = true;
+
+  } catch (error) {
+    console.error('Customer search failed:', error);
+    customers.value = [];
+  } finally {
+    searchingCustomers.value = false;
+  }
+}
+
+function selectCustomer(customer) {
+  form.customerName = customer.customerName;
+  form.customerContact = customer.customerContact || '';
+  form.customerEmail = customer.customerEmail || '';
+  form.deliveryAddress = customer.deliveryAddress || '';
+  form.platform = customer.platform || '';
+
+  showCustomers.value = false;
+  customers.value = [];
+}
 
 function addItem() {
   form.items.push(newItem());
@@ -56,6 +102,7 @@ function removeItem(index) {
 
 // ---------- variants (from the Products page) ----------
 function findProduct(productId) {
+  console.log(products.value)
   return products.value.find((p) => p._id === productId);
 }
 
@@ -214,7 +261,7 @@ const autoFillForm = async () => {
     }
 
     // Items
-    
+
     // Items
     // Items
     if (data.items?.length > 0) {
@@ -223,8 +270,8 @@ const autoFillForm = async () => {
         variantId: item.variantId ?? null,
         quantity: item.quantity ?? 1
       }));
-    
-      
+
+
       filledFields.value.push('Items');
 
       // Variant is optional: anything not stated or not matched becomes Regular.
@@ -350,7 +397,8 @@ const autoFillForm = async () => {
       <section class="autofill-card mb-4" aria-labelledby="autofill-title">
         <h2 id="autofill-title" class="h5 mb-1">Customer's message</h2>
         <p class="autofill-hint mb-2">
-          Paste the customer's message and we'll fill in the form for you. You can check and change everything before saving.
+          Paste the customer's message and we'll fill in the form for you. You can check and change everything before
+          saving.
         </p>
 
         <label for="rawMessage" class="visually-hidden">Customer's message (optional)</label>
@@ -366,56 +414,77 @@ const autoFillForm = async () => {
           </button>
         </div>
 
-      <div v-if="isProcessing" class="processing-overlay">
-        <div class="processing-box">
-          <div class="spinner-border text-primary mb-3" role="status"></div>
+        <div v-if="isProcessing" class="processing-overlay">
+          <div class="processing-box">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
 
-          <h5>Processing order...</h5>
+            <h5>Processing order...</h5>
 
-          <p class="text-muted mb-0">
-            Extracting order details. Please be patient. Should not take more than 20s.
-          </p>
-        </div>
-      </div>
-
-      <div v-if="filledFields.length > 0 || missingFields.length > 0" class="af-results" role="status">
-        <div v-if="filledFields.length > 0" class="af-row">
-          <span class="af-label">✓ Filled in</span>
-          <span v-for="field in filledFields" :key="field" class="af-chip af-chip--ok">{{ field }}</span>
+            <p class="text-muted mb-0">
+              Extracting order details. Please be patient. Should not take more than 20s.
+            </p>
+          </div>
         </div>
 
-        <div v-if="missingFields.length > 0" class="af-row">
-          <span class="af-label">Not in message</span>
-          <span v-for="field in missingFields" :key="field" class="af-chip af-chip--todo">{{ field }}</span>
-        </div>
+        <div v-if="filledFields.length > 0 || missingFields.length > 0" class="af-results" role="status">
+          <div v-if="filledFields.length > 0" class="af-row">
+            <span class="af-label">✓ Filled in</span>
+            <span v-for="field in filledFields" :key="field" class="af-chip af-chip--ok">{{ field }}</span>
+          </div>
 
-        <div v-if="detectionProblems.length > 0" class="af-review">
-          <strong>Needs review:</strong>
-          <ul class="mb-0">
-            <li v-for="(problem, index) in detectionProblems" :key="index">
-              {{ problem }}
-            </li>
-          </ul>
+          <div v-if="missingFields.length > 0" class="af-row">
+            <span class="af-label">Not in message</span>
+            <span v-for="field in missingFields" :key="field" class="af-chip af-chip--todo">{{ field }}</span>
+          </div>
+
+          <div v-if="detectionProblems.length > 0" class="af-review">
+            <strong>Needs review:</strong>
+            <ul class="mb-0">
+              <li v-for="(problem, index) in detectionProblems" :key="index">
+                {{ problem }}
+              </li>
+            </ul>
+          </div>
         </div>
-      </div>
       </section>
 
       <!-- Customer -->
       <fieldset class="mb-4">
         <legend class="h5">Customer</legend>
 
-        <div class="mb-3">
+        <div class="mb-3 position-relative">
           <label for="customerName" class="form-label">Name *</label>
-          <input id="customerName" v-model="form.customerName" class="form-control"
-            :class="{ 'is-invalid': isMissing('Customer name'), 'is-autofilled': filledFields.includes('Customer Name') }" />
+
+          <input id="customerName" v-model="form.customerName" class="form-control" :class="{
+            'is-invalid': isMissing('Customer name'),
+            'is-autofilled': filledFields.includes('Customer Name')
+          }" placeholder="Enter customer name" autocomplete="off" @input="searchCustomers" @focus="searchCustomers" />
+
+          <!-- Customer search results -->
+          <div v-if="showCustomers" class="customer-dropdown position-absolute w-100 shadow">
+            <button v-for="(customer, index) in customers" :key="index" type="button"
+              class="customer-option text-start w-100" @mousedown.prevent="selectCustomer(customer)">
+              <strong>{{ customer.customerName }}</strong>
+
+              <div class="small text-muted">
+                {{ customer.customerContact || 'No contact' }}
+                <span v-if="customer.customerEmail">
+                  · {{ customer.customerEmail }}
+                </span>
+              </div>
+            </button>
+
+            <div v-if="customers.length === 0" class="customer-empty">
+              No past customers found.
+            </div>
+          </div>
         </div>
 
         <div class="row g-3">
           <div class="col-sm-6">
             <label for="customerContact" class="form-label">Contact</label>
             <input id="customerContact" v-model="form.customerContact" class="form-control"
-              :class="{ 'is-autofilled': filledFields.includes('Contact') }"
-              placeholder="Phone or handle" />
+              :class="{ 'is-autofilled': filledFields.includes('Contact') }" placeholder="Phone or handle" />
           </div>
           <div class="col-sm-6">
             <label for="platform" class="form-label">Ordered via</label>
@@ -462,10 +531,10 @@ const autoFillForm = async () => {
           <div class="col-sm-3">
             <label :for="`variant-${index}`" class="form-label">Variant</label>
             <select :id="`variant-${index}`" v-model="item.variantId" class="form-select"
-              :class="{ 'is-autofilled': filledFields.includes('Variant') }"
-              :disabled="variantsFor(item).length === 0">
+              :class="{ 'is-autofilled': filledFields.includes('Variant') }" :disabled="variantsFor(item).length === 0">
               <!-- Placeholder only when there's nothing to choose; otherwise Regular is the default -->
-              <option v-if="variantsFor(item).length === 0" :value="null" disabled>{{ variantPlaceholder(item) }}</option>
+              <option v-if="variantsFor(item).length === 0" :value="null" disabled>{{ variantPlaceholder(item) }}
+              </option>
               <!-- Regular = the plain product (main recipe only). Its value is null, not the text "Regular". -->
               <option v-if="variantsFor(item).length > 0" :value="null">
                 Regular (${{ (findProduct(item.product).price ?? 0).toFixed(2) }})
@@ -518,7 +587,8 @@ const autoFillForm = async () => {
           <div v-if="form.paymentStatus === 'deposit'" class="col-sm-4">
             <label for="depositAmount" class="form-label">Deposit ($) *</label>
             <input id="depositAmount" v-model.number="form.depositAmount" type="number" min="0" step="0.01"
-              class="form-control" :class="{ 'is-invalid': isMissing('Deposit amount'), 'is-autofilled': filledFields.includes('Deposit Amount') }" />
+              class="form-control"
+              :class="{ 'is-invalid': isMissing('Deposit amount'), 'is-autofilled': filledFields.includes('Deposit Amount') }" />
           </div>
         </div>
       </fieldset>
@@ -620,6 +690,7 @@ const autoFillForm = async () => {
 .autofill-actions .btn {
   background-color: var(--sk-surface);
 }
+
 .autofill-actions .btn:hover:not(:disabled) {
   background-color: var(--sk-brand);
 }
@@ -720,8 +791,49 @@ const autoFillForm = async () => {
     flex-direction: column;
     align-items: stretch;
   }
+
   .order-footer__save {
     width: 100%;
   }
+}
+
+.customer-dropdown {
+  top: 100%;
+  left: 0;
+  z-index: 1050;
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  margin-top: 4px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.customer-option {
+  display: block;
+  padding: 10px 14px;
+  background-color: #ffffff;
+  color: #212529;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.customer-option:hover {
+  background-color: #f1f3f5;
+}
+
+.customer-option:focus-visible {
+  background-color: #e9ecef;
+  outline: 2px solid #adb5bd;
+  outline-offset: -2px;
+}
+
+.customer-empty {
+  padding: 12px 14px;
+  color: #6c757d;
+  background-color: #ffffff;
+  font-size: 0.875rem;
 }
 </style>
