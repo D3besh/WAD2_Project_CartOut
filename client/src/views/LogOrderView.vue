@@ -3,11 +3,53 @@
 // Still TODO (prototype views 2–4), to add on top of this form later:
 //   - "Extract order details" from the pasted message, calling extractOrder()
 //   - run checkOrder() and warn if the order can't be fulfilled
-import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick, onBeforeUnmount } from 'vue';
 import axios from 'axios';
+import ActionBanner from '../components/ActionBanner.vue';
+import StockCheck from '../components/forecast/StockCheck.vue';
+import { fullRecipe } from '../utils/capacity.js';
+import { formatDay, buildWeekDays, busiestOf, checkOrderLine } from '../utils/forecast.js';
 
 const products = ref([]);
 const productsError = ref('');
+
+// Materials, for the "do I have enough?" note under each quantity.
+// Stock already has every logged order taken off (the server deducts on save),
+// so this is what's left for NEW orders.
+// null = not loaded (or failed): the stock checks are hidden rather than showing "can make 0".
+const materials = ref(null);
+
+// ---------- message banner (components/ActionBanner.vue) ----------
+// green = saved, purple = saved but note something, red = didn't save
+const banner = ref(null);
+
+// Smoothly scroll back to the top so the banner and page title are in view.
+// People who turned off animations in their system settings get an instant jump.
+async function scrollToTop() {
+  // Wait until Vue has finished changing the page (form cleared, banner shown).
+  // Some browsers drop a smooth scroll if the page changes while it's moving.
+  await nextTick();
+
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const startY = window.scrollY;
+  window.scrollTo({ top: 0, behavior: reduceMotion ? 'instant' : 'smooth' });
+
+  // Safety net: if the page hasn't moved at all after 1 s, the smooth scroll was
+  // dropped, so jump instead. ('instant', not 'auto': Bootstrap makes 'auto' smooth.)
+  // Only when nothing moved, so we never pull back a seller who scrolled down themselves.
+  setTimeout(() => {
+    if (window.scrollY === startY && startY > 0) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, 1000);
+}
+
+// ---------- "now", for blocking past due dates ----------
+// Updated every 30 s, so a page left open doesn't keep allowing a time that has passed.
+const now = ref(new Date());
+let clock = null;
+onMounted(() => { clock = setInterval(() => { now.value = new Date(); }, 30000); });
+onUnmounted(() => clearInterval(clock));
 
 // One line of the order. variantId means:
 //   null  = "Regular", the plain product with the main recipe only (the default)
@@ -33,8 +75,8 @@ const emptyForm = () => ({
 
 const form = reactive(emptyForm());
 const saving = ref(false);
-const saveError = ref('');
-const savedOrder = ref(null);
+// Becomes true the first time Save is pressed. Until then, no field is shown in red.
+const triedToSubmit = ref(false);
 
 // ---------- customer search ----------
 const customers = ref([]);
@@ -44,12 +86,59 @@ const searchingCustomers = ref(false);
 onMounted(async () => {
   try {
     const response = await axios.get('/api/products');
-    products.value = response.data
-    console.log("IMPTTT", products.value)
+    products.value = response.data;
   } catch (err) {
     productsError.value = `Couldn't load products: ${err.message}`;
   }
+  loadMaterials();
+  loadBusiestDay();
 });
+
+// ---------- busiest day: the same rule as the "This week" strip (WeekStrip.vue) ----------
+// buildWeekDays + busiestOf come from utils/forecast.js, so both always pick the same day.
+const busiestDay = ref(null);   // { date: '2026-11-07', ... } or null
+const activeOrders = ref([]);   // in progress + ready, for "you already have x orders"
+
+async function loadBusiestDay() {
+  try {
+    const [forecastRes, ordersRes] = await Promise.all([
+      axios.get('/api/materials/forecast'),
+      axios.get('/api/orders', { params: { outcome: 'ongoing' } }), // everything except cancelled
+    ]);
+    // /api/products is already loading in onMounted; wait for it if it hasn't finished
+    const productList = products.value.length ? products.value : (await axios.get('/api/products')).data;
+    busiestDay.value = busiestOf(buildWeekDays(forecastRes.data, productList));
+    activeOrders.value = ordersRes.data.filter((o) => ['in-progress', 'ready'].includes(o.status));
+  } catch (err) {
+    // Not fatal: the note just won't show
+    console.error("Couldn't load the busiest day:", err.message);
+    busiestDay.value = null;
+  }
+}
+
+// Shown under the Due field when the chosen date is the busiest day
+const busiestDayNote = computed(() => {
+  if (!busiestDay.value || !form.dueAt) return null;
+  // datetime-local is 'YYYY-MM-DDTHH:mm' in the seller's time, the forecast uses 'YYYY-MM-DD' in SG time
+  if (form.dueAt.slice(0, 10) !== busiestDay.value.date) return null;
+
+  const count = activeOrders.value.filter(
+    (o) => toDateTimeInput(o.dueAt).slice(0, 10) === busiestDay.value.date
+  ).length;
+  return { day: formatDay(busiestDay.value.date), count };
+});
+
+// Also called after each save, because saving an order takes its materials out of stock
+async function loadMaterials() {
+  try {
+    const response = await axios.get('/api/materials');
+    materials.value = response.data;
+  } catch (err) {
+    // Not fatal: the order can still be logged, just without the stock notes
+    console.error("Couldn't load materials:", err.message);
+    materials.value = null;
+  }
+}
 
 async function searchCustomers() {
   const name = form.customerName.trim();
@@ -80,6 +169,25 @@ async function searchCustomers() {
     searchingCustomers.value = false;
   }
 }
+
+const customerDropdownRef = ref(null);
+
+function handleClickOutside(event) {
+  if (
+    customerDropdownRef.value &&
+    !customerDropdownRef.value.contains(event.target)
+  ) {
+    showCustomers.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside);
+});
 
 function selectCustomer(customer) {
   form.customerName = customer.customerName;
@@ -166,19 +274,109 @@ const missing = computed(() => {
   if (!form.fulfilmentMethod) list.push('Collection or delivery');
   if (form.fulfilmentMethod === 'delivery' && !form.deliveryAddress.trim()) list.push('Delivery address');
   if (!form.dueAt) list.push('Due date');
+  else if (dueIsInPast.value) list.push('Due date (already passed)');
   if (form.paymentStatus === 'deposit' && !(form.depositAmount > 0)) list.push('Deposit amount');
   return list;
 });
 
-const isMissing = (label) => missing.value.includes(label);
+// Only show a field in red AFTER the seller has tried to save.
+// It goes back to normal as soon as it's filled in, because `missing` updates live.
+const isMissing = (label) => triedToSubmit.value && missing.value.includes(label);
+
+// ---------- no backdating ----------
+// 'YYYY-MM-DDTHH:mm' for the date picker's min, so past days and times are greyed out
+const minDueAt = computed(() => toDateTimeInput(now.value));
+
+// Picker min alone isn't enough: a date can be typed in, or filled by Auto fill
+const dueIsInPast = computed(() => Boolean(form.dueAt) && new Date(form.dueAt) < now.value);
+
+// ---------- "do I have enough materials?" (components/forecast/StockCheck.vue) ----------
+// StockCheck does the check for each item. The page only works out what the
+// OTHER items need, because different products can share a material
+// (cookies and cake both use butter).
+
+// The chosen variant object, or null for Regular
+function findVariant(item) {
+  return variantsFor(item).find((v) => v._id === item.variantId) ?? null;
+}
+
+// What one item needs in total, per material id: { <materialId>: amount }
+function itemNeeds(item) {
+  const product = findProduct(item.product);
+  const needs = {};
+  if (!product || !(item.quantity >= 1)) return needs;
+  for (const line of fullRecipe(product, findVariant(item))) {
+    const id = String(line.material);
+    needs[id] = (needs[id] || 0) + line.amountPerUnit * item.quantity;
+  }
+  return needs;
+}
+
+// For each item: what all the OTHER items need, per material (for StockCheck's used-by-other-items)
+const usedByOtherItems = computed(() => {
+  const all = form.items.map(itemNeeds);
+  return form.items.map((_, index) => {
+    const others = {};
+    all.forEach((needs, other) => {
+      if (other === index) return;
+      for (const id in needs) others[id] = (others[id] || 0) + needs[id];
+    });
+    return others;
+  });
+});
+
+// Materials that are short across the whole order, for the purple "saved" banner.
+// Same check as StockCheck, so the banner and the notes always agree.
+const shortMaterials = computed(() => {
+  const names = new Set();
+  if (materials.value === null) return [];
+  form.items.forEach((item, index) => {
+    if (!(item.quantity >= 1)) return;
+    const left = materials.value.map((m) => ({
+      ...m,
+      quantity: m.quantity - (usedByOtherItems.value[index][String(m.id)] || 0),
+    }));
+    const check = checkOrderLine(findProduct(item.product), findVariant(item), item.quantity, left);
+    if (check && !check.enough) names.add(check.limitedBy);
+  });
+  return [...names];
+});
+
+// The "fill these in" error clears itself once nothing is missing
+watch(
+  () => missing.value.length,
+  (count) => {
+    if (count === 0 && banner.value?.kind === 'missing') banner.value = null;
+  }
+);
 
 async function saveOrder() {
-  if (missing.value.length || saving.value) return;
+  if (saving.value) return;
+  triedToSubmit.value = true;
+
+  if (missing.value.length) {
+    const n = missing.value.length;
+    banner.value = {
+      type: 'error',
+      kind: 'missing',
+      text: `Fill in ${n} required ${n === 1 ? 'field' : 'fields'}: ${missing.value.join(', ')}.`,
+    };
+    // Take the seller to the first red field rather than the top: that's where they need to be
+    await nextTick();
+    const firstInvalid = document.querySelector('[data-testid="page-log-order"] .is-invalid');
+    if (firstInvalid) {
+      firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      firstInvalid.focus({ preventScroll: true });
+    }
+    return;
+  }
+
   saving.value = true;
-  saveError.value = '';
+  banner.value = null;
+  const shortAtSave = shortMaterials.value; // remember before the form is cleared
 
   try {
-    savedOrder.value = await createOrder({
+    const saved = await createOrder({
       ...form,
       // Only send ids and quantities; the server looks up names and prices itself
       items: form.items.map((item) => ({
@@ -192,10 +390,30 @@ async function saveOrder() {
     });
     Object.assign(form, emptyForm());
     priceEditedByHand.value = false;
+    triedToSubmit.value = false;
+    filledFields.value = [];
+    missingFields.value = [];
+    detectionProblems.value = [];
+
+    banner.value = shortAtSave.length
+      ? {
+          type: 'info',
+          text: `Order for ${saved.customerName} saved. Not enough ${shortAtSave.join(', ')}: restock before it's due.`,
+        }
+      : { type: 'success', text: `Order for ${saved.customerName} saved.` };
+
+    loadMaterials(); // the server just took this order's materials out of stock
+    loadBusiestDay(); // the new order counts towards the busiest day too
   } catch (err) {
-    saveError.value = err.message;
+    // Show the server's own message ("Due date can't be in the past"), not axios's
+    // generic "Request failed with status code 400"
+    banner.value = {
+      type: 'error',
+      text: err.response?.data?.error || err.response?.data?.message || err.message,
+    };
   } finally {
     saving.value = false;
+    scrollToTop();
   }
 }
 
@@ -394,12 +612,8 @@ const autoFillForm = async () => {
   <section data-testid="page-log-order" class="container py-4" style="max-width: 720px">
     <h1 class="mb-4">Log order</h1>
 
-    <div v-if="savedOrder" class="alert alert-success" role="status">
-      Order for {{ savedOrder.customerName }} saved.
-      <button type="button" class="btn-close float-end" aria-label="Dismiss" @click="savedOrder = null"></button>
-    </div>
-
-    <div v-if="saveError" class="alert alert-danger" role="alert">{{ saveError }}</div>
+    <!-- Saved / saved-but-short / didn't save. Sticks under the navbar. -->
+    <ActionBanner :message="banner" @close="banner = null" />
 
     <form @submit.prevent="saveOrder" novalidate>
       <!-- Start from the customer's message: paste it, then Auto fill -->
@@ -461,7 +675,7 @@ const autoFillForm = async () => {
       <fieldset class="mb-4">
         <legend class="h5">Customer</legend>
 
-        <div class="mb-3 position-relative">
+        <div class="mb-3 position-relative" ref="customerDropdownRef">
           <label for="customerName" class="form-label">Name *</label>
 
           <input id="customerName" v-model="form.customerName" class="form-control" :class="{
@@ -556,11 +770,21 @@ const autoFillForm = async () => {
           <div class="col-sm-2">
             <label :for="`qty-${index}`" class="form-label">Qty *</label>
             <input :id="`qty-${index}`" v-model.number="item.quantity" type="number" min="1" class="form-control"
-              :class="{ 'is-autofilled': filledFields.includes('Quantity') }" />
+              :class="{
+                'is-invalid': !(item.quantity >= 1) && isMissing('Products and quantities'),
+                'is-autofilled': filledFields.includes('Quantity')
+              }" />
           </div>
           <div class="col-sm-2">
             <button type="button" class="btn btn-outline-danger w-100" :disabled="form.items.length === 1"
               @click="removeItem(index)">Remove</button>
+          </div>
+
+          <!-- "You can make 30" / "You can only make 2 …". A warning only: the seller may be restocking. -->
+          <div v-if="materials !== null" class="col-12">
+            <StockCheck :product="findProduct(item.product)" :variant="findVariant(item)" :quantity="item.quantity"
+              :due-text="form.dueAt ? formatDay(form.dueAt.slice(0, 10)) : ''" :materials="materials"
+              :used-by-other-items="usedByOtherItems[index]" />
           </div>
         </div>
 
@@ -617,8 +841,23 @@ const autoFillForm = async () => {
           </div>
           <div class="col-sm-6">
             <label for="dueAt" class="form-label">Due *</label>
-            <input id="dueAt" v-model="form.dueAt" type="datetime-local" class="form-control"
-              :class="{ 'is-invalid': isMissing('Due date'), 'is-autofilled': filledFields.includes('Due Date') }" />
+            <!-- min greys out past days and times in the picker -->
+            <input id="dueAt" v-model="form.dueAt" type="datetime-local" class="form-control" :min="minDueAt"
+              :class="{
+                'is-invalid': isMissing('Due date') || isMissing('Due date (already passed)'),
+                'is-autofilled': filledFields.includes('Due Date')
+              }" aria-describedby="dueAtHelp" />
+            <div v-if="isMissing('Due date (already passed)')" class="invalid-feedback">
+              This time has already passed. Pick a later one.
+            </div>
+            <!-- Shown even before Save is pressed, so the seller can decide before committing -->
+            <div v-else-if="dueIsInPast" id="dueAtHelp" class="form-text text-danger">
+              This time has already passed.
+            </div>
+            <div v-else-if="busiestDayNote" id="dueAtHelp" class="busy-note" aria-live="polite">
+              📅 {{ busiestDayNote.day }} is your busiest day. You already have
+              {{ busiestDayNote.count }} active {{ busiestDayNote.count === 1 ? 'order' : 'orders' }} due. Take note.
+            </div>
           </div>
           <div v-if="form.fulfilmentMethod === 'delivery'" class="col-12">
             <label for="deliveryAddress" class="form-label">Delivery address *</label>
@@ -637,7 +876,8 @@ const autoFillForm = async () => {
           <template v-else>All set. Ready to save.</template>
         </p>
 
-        <button type="submit" class="btn btn-primary order-footer__save" :disabled="missing.length > 0 || saving">
+        <!-- Not disabled when fields are missing: pressing it is what turns them red -->
+        <button type="submit" class="btn btn-primary order-footer__save" :disabled="saving">
           {{ saving ? 'Saving…' : 'Save order' }}
         </button>
       </div>
@@ -764,6 +1004,16 @@ const autoFillForm = async () => {
 .is-autofilled:not(.is-invalid) {
   border-color: var(--sk-ok);
   box-shadow: 0 0 0 3px rgb(31 122 109 / 0.15);
+}
+
+/* ---------- Busiest-day note (amber, not red: it doesn't stop the save) ---------- */
+.busy-note {
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
+  color: var(--sk-warn);
+  background: var(--sk-warn-soft);
+  border-radius: var(--sk-radius-sm);
 }
 
 /* ---------- Footer with Save ---------- */
