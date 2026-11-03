@@ -112,7 +112,7 @@ h1, h2, h3, .h1, .h2, .h3 { font-weight: 800; letter-spacing: -0.02em; }
   min-height: 100vh;
   padding: 1.25rem 1rem 2.5rem;
 }
-.app-main > .container { max-width: 1120px; }   /* same width on every page, centred */
+.app-main > .container { max-width: 1400px; }   /* same width on every page, centred */
 .app-main--bare { padding-bottom: 1.25rem; }
 
 @media (min-width: 768px) {

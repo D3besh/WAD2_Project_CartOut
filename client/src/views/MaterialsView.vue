@@ -3,8 +3,12 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import MaterialCard from '../components/MaterialCard.vue';
+import ActionBanner from '../components/ActionBanner.vue';
+import Pager from '../components/Pager.vue';
+import WhatToBuyPanel from '../components/forecast/WhatToBuyPanel.vue';
+import RestockModal from '../components/forecast/RestockModal.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
-import { formatDay, restockWithin, restockStatusText } from '../utils/forecast.js';
+import { formatDay, formatAmount, restockRowFor } from '../utils/forecast.js';
 
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
@@ -13,7 +17,7 @@ const router = useRouter(); // to change the address
 // 1. DATA
 // =====================================================
 const materials = ref([]);        // all materials from the server
-const errorMessage = ref('');     // red box at the top of the page
+const banner = ref(null);         // message under the navbar, e.g. { type: 'success', text: 'Butter added' }
 const search = ref('');           // text typed in the search box
 
 // Remember the seller's filter choice in localStorage,
@@ -32,19 +36,23 @@ const editingId = ref(null);      // null = adding a new one, otherwise the id b
 const form = ref({});             // the values in the form
 const formError = ref('');        // error message inside the pop-up
 
-// Restock pop-up (only for quantity materials)
-const restockTarget = ref(null);  // the material being restocked, or null = closed
-const restockAmount = ref(0);
-const restockError = ref('');
+// Restock pop-up (shared RestockModal component): the rows to restock, or null = closed
+const restockRows = ref(null);
 
-// Shopping list pop-up
-const showShoppingList = ref(false);
-
-// Forecast: which materials will go low or run out soon (from the server)
+// Forecast: for the "Runs low" pill on each card and the suggested restock amount
 const forecast = ref(null);       // null = not loaded yet
 
-const URGENT_DAYS = 7;   // "Restock soon" only shows materials that go low / run out within 7 days
-const MAX_SHOWN = 3;     // and at most 3 of them (the rest are on the Forecast page)
+// Paging: 12 cards per page
+const PER_PAGE = 12;
+const page = ref(1);
+
+// The "What to buy" panel loads its own data. Changing this number makes it load again
+// (after something here changes the stock, e.g. a restock from a card).
+const panelKey = ref(0);
+
+// "What to buy →" on Products / Home links here with ?highlight=<material id>,
+// so that material stands out in the "What to buy" list
+const highlightId = ref(null);
 
 // =====================================================
 // 2. LOAD MATERIALS FROM THE SERVER
@@ -56,7 +64,7 @@ async function loadMaterials() {
     let response = await axios.get(url);
     materials.value = response.data;
   } catch (error) {
-    errorMessage.value = getErrorText(error);
+    banner.value = { type: 'error', text: "Couldn't load your materials: " + getErrorText(error) };
   }
 }
 
@@ -79,11 +87,28 @@ async function reloadAll() {
   await loadForecast();
 }
 
+// Load everything again, including the "What to buy" panel
+async function refreshEverything() {
+  await reloadAll();
+  panelKey.value++;
+}
+
 // Run once when the page opens
 onMounted(() => {
   reloadAll();
   openFormFromLink(); // opened from the floating "+" button?
+  highlightFromLink(); // opened from "What to buy →"?
 });
+
+// Remember which material to highlight, then tidy the address
+// (same idea as ?add=1 below)
+function highlightFromLink() {
+  if (route.query.highlight) {
+    highlightId.value = route.query.highlight;
+    router.replace({ query: {} });
+  }
+}
+watch(() => route.query.highlight, highlightFromLink);
 
 // The floating "+" button links here with ?add=1 (e.g. /materials?add=1).
 // When we see it, open the Add pop-up, then remove ?add=1 from the address
@@ -133,27 +158,31 @@ const visibleMaterials = computed(() => {
   return list;
 });
 
-// Materials that will go low or run out within the next 7 days, soonest first.
-// Ones that are ALREADY low are left out here: the "running low" banner above already shows them.
-const restockSoon = computed(() => {
-  return restockWithin(forecast.value, URGENT_DAYS).filter((r) => !r.alreadyLow);
+// Only the 12 cards on the current page
+const pagedMaterials = computed(() => {
+  let start = (page.value - 1) * PER_PAGE;
+  return visibleMaterials.value.slice(start, start + PER_PAGE);
 });
 
-// Only the 3 most urgent go in the banner
-const visibleRestock = computed(() => {
-  return restockSoon.value.slice(0, MAX_SHOWN);
+// Back to page 1 when the filter or search changes (page 3 may not exist any more)
+watch([search, showLowOnly], () => {
+  page.value = 1;
 });
 
-// How long a material's bar is: days left out of 7 (a sliver is always visible)
-function barPercent(daysLeft) {
-  let percent = Math.round((daysLeft / URGENT_DAYS) * 100);
-  return Math.max(4, Math.min(100, percent));
-}
+// After deleting the last card on the last page, step back a page
+watch(visibleMaterials, (list) => {
+  let lastPage = Math.max(1, Math.ceil(list.length / PER_PAGE));
+  if (page.value > lastPage) {
+    page.value = lastPage;
+  }
+});
 
-// Red = 3 days or less, amber = later in the week
-function barColour(daysLeft) {
-  if (daysLeft <= 3) return 'is-red';
-  return 'is-amber';
+// Amounts in the unit people think in: 6074 g → ["6.1", "kg"], 40 ml → ["40", "ml"]
+// (split so the number can be big and the unit small on the card)
+function amountParts(amount, unit) {
+  let text = formatAmount(amount, unit);
+  let space = text.indexOf(' ');
+  return [text.slice(0, space), text.slice(space + 1)];
 }
 
 // The forecast for one material (used inside each card), or null
@@ -220,8 +249,11 @@ async function saveForm() {
     return;
   }
 
+  let name = form.value.name;
+  let isNew = editingId.value === null;
+
   try {
-    if (editingId.value === null) {
+    if (isNew) {
       // Add a new material
       let url = '/api/materials';
       await axios.post(url, form.value);
@@ -232,7 +264,8 @@ async function saveForm() {
     }
 
     showForm.value = false;
-    await reloadAll(); // refresh the list and forecast
+    banner.value = { type: 'success', text: isNew ? name + ' added.' : 'Changes to ' + name + ' saved.' };
+    await refreshEverything(); // refresh the cards, forecast and What to buy
   } catch (error) {
     formError.value = getErrorText(error);
   }
@@ -244,11 +277,13 @@ async function deleteMaterial() {
   }
 
   let url = '/api/materials/' + editingId.value;
+  let name = form.value.name;
 
   try {
     await axios.delete(url);
     showForm.value = false;
-    await reloadAll();
+    banner.value = { type: 'success', text: name + ' deleted.' };
+    await refreshEverything();
   } catch (error) {
     formError.value = getErrorText(error);
   }
@@ -266,33 +301,32 @@ async function markRestocked(material) {
 
     try {
       await axios.patch(url, { level: 'high' });
-      await reloadAll();
+      banner.value = { type: 'success', text: material.name + ' restocked. Level set to High.' };
+      await refreshEverything();
     } catch (error) {
-      errorMessage.value = getErrorText(error);
+      banner.value = { type: 'error', text: "Couldn't restock " + material.name + ': ' + getErrorText(error) };
     }
   } else {
-    // Quantity materials: open the pop-up to ask how much was bought
-    restockTarget.value = material;
-    restockAmount.value = 0;
-    restockError.value = '';
+    // Quantity materials: open the Restock pop-up, pre-filled with a week's worth.
+    // (If the forecast has nothing for it, the amount starts at 0 for the seller to fill in.)
+    let row = restockRowFor(forecast.value, material.id);
+    restockRows.value = [row || { ...material, buyAmount: 0 }];
   }
 }
 
-async function saveRestock() {
-  if (restockAmount.value <= 0) {
-    restockError.value = 'Enter how much you bought';
-    return;
-  }
+// After the Restock pop-up saves, from a card's Restock button
+async function afterCardRestock(names) {
+  banner.value = { type: 'success', text: names.join(', ') + ' restocked.' };
+  await refreshEverything();
+}
 
-  let url = '/api/materials/' + restockTarget.value.id + '/restock';
-
-  try {
-    await axios.patch(url, { amount: restockAmount.value });
-    restockTarget.value = null; // close the pop-up
-    await reloadAll();
-  } catch (error) {
-    restockError.value = getErrorText(error);
-  }
+// After the What to buy panel restocks (it already reloaded itself)
+async function afterPanelRestock(names) {
+  banner.value = {
+    type: 'success',
+    text: names.length === 1 ? names[0] + ' restocked.' : names.length + ' materials restocked: ' + names.join(', ') + '.',
+  };
+  await reloadAll();
 }
 </script>
 
@@ -303,112 +337,91 @@ async function saveRestock() {
     <header class="page-header">
       <div>
         <h1>Materials</h1>
-        <p>What you have in stock</p>
+        <p>What you have, and what to buy next</p>
       </div>
       <button type="button" class="btn btn-primary" @click="openAddForm">+ Add material</button>
     </header>
 
-    <!-- ===== Error message ===== -->
-    <div v-if="errorMessage" class="inv-banner inv-banner--danger mb-3">{{ errorMessage }}</div>
-
-    <!-- ===== Low stock banner (only when something is low) ===== -->
-    <div v-if="lowMaterials.length > 0" class="inv-banner inv-banner--warn mb-3">
-      <p class="inv-banner__title">
-        🛒 <strong>{{ lowMaterials.length }}</strong> material(s) running low
-      </p>
-      <button type="button" class="btn btn-light btn-sm" @click="showShoppingList = true">
-        View shopping list
-      </button>
-    </div>
-
-    <!-- ===== Restock soon: materials that go low / run out within 7 days (max 3) ===== -->
-    <section v-if="restockSoon.length > 0" class="fc-restock mb-4">
-      <h2 class="fc-restock__title">📅 Restock soon</h2>
-
-      <div v-for="item in visibleRestock" :key="item.id" class="fc-row">
-        <span class="fc-row__name">{{ item.name }}</span>
-        <div class="fc-bar" aria-hidden="true">
-          <span :class="barColour(item.actIn)" :style="{ width: barPercent(item.actIn) + '%' }"></span>
-        </div>
-        <span class="fc-days" :class="barColour(item.actIn)">{{ restockStatusText(item) }}</span>
-        <div class="fc-action">
-          <template v-if="item.amountText">Buy <strong>~{{ item.amountText }}</strong></template>
-          <template v-else>Check stock</template>
-          <strong v-if="item.actOn === null"> today</strong>
-          <template v-else> by <strong>{{ formatDay(item.actOn) }}</strong></template>
-        </div>
-      </div>
-
-      <div class="fc-foot">
-        <span>Based on your last 8 weeks of orders and the orders already logged.</span>
-        <RouterLink to="/forecast" class="fc-link">
-          <template v-if="restockSoon.length > MAX_SHOWN">+ {{ restockSoon.length - MAX_SHOWN }} more · </template>See full forecast →
-        </RouterLink>
-      </div>
-    </section>
+    <!-- ===== What just happened (sticks under the navbar) ===== -->
+    <ActionBanner :message="banner" @close="banner = null" />
 
     <!-- No order history yet = nothing to learn from -->
     <p v-if="forecast !== null && forecast.historyOrderCount === 0" class="inv-meta mb-3">
-      📅 The forecast starts working once you have some completed orders.
+      📅 Suggestions on what to buy start once you have some completed orders.
     </p>
 
-    <!-- ===== Filter chips and search ===== -->
-    <div class="sk-card inv-toolbar mb-4">
-      <div class="chips">
-        <button type="button" class="chip" :class="{ 'is-active': !showLowOnly }" @click="setShowLowOnly(false)">
-          All
-        </button>
-        <button type="button" class="chip" :class="{ 'is-active': showLowOnly }" @click="setShowLowOnly(true)">
-          Low stock
-          <span v-if="lowMaterials.length > 0" class="count">{{ lowMaterials.length }}</span>
-        </button>
+    <!-- Cards on the left, "What to buy" on the right (stacks on small screens) -->
+    <div class="mat-layout">
+      <div class="mat-layout__main">
+
+        <!-- ===== Filter chips and search ===== -->
+        <div class="sk-card inv-toolbar mb-3">
+          <div class="chips">
+            <button type="button" class="chip" :class="{ 'is-active': !showLowOnly }" @click="setShowLowOnly(false)">
+              All
+            </button>
+            <button type="button" class="chip" :class="{ 'is-active': showLowOnly }" @click="setShowLowOnly(true)">
+              Low stock
+              <span v-if="lowMaterials.length > 0" class="count">{{ lowMaterials.length }}</span>
+            </button>
+          </div>
+          <input id="material-search" v-model="search" class="form-control inv-search" placeholder="Search materials"
+            aria-label="Search materials" />
+        </div>
+
+        <!-- ===== Material cards (12 per page) ===== -->
+        <TransitionGroup v-if="visibleMaterials.length > 0" name="list" tag="div" class="mat-grid">
+
+          <!-- Prop: :material.  Events: @restock and @edit (the card sends the material back). -->
+          <MaterialCard v-for="m in pagedMaterials" :key="m.id" :material="m" @restock="markRestocked"
+            @edit="openEditForm">
+            <!-- Everything in here goes into the card's <slot> -->
+
+            <!-- Quantity materials show a number, in an easy unit (6.1 kg, not 6074 g) -->
+            <template v-if="m.trackingMode === 'quantity'">
+              <div class="inv-qty">
+                {{ amountParts(m.quantity, m.unit)[0] }}<small>{{ amountParts(m.quantity, m.unit)[1] }}</small>
+              </div>
+              <div class="inv-meter" aria-hidden="true">
+                <span :class="{ 'is-low': m.isLow }" :style="{ width: stockPercent(m) + '%' }"></span>
+              </div>
+              <p v-if="m.lowStockThreshold !== null" class="inv-meta">
+                Low below {{ formatAmount(m.lowStockThreshold, m.unit) }}
+              </p>
+              <!-- From the forecast -->
+              <span v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="inv-forecast">
+                📅 Runs low {{ formatDay(forecastFor(m.id).runsLowOn) }}
+              </span>
+            </template>
+
+            <!-- Level materials show Low / Medium / High -->
+            <template v-else>
+              <div class="inv-qty inv-level">{{ m.level }}</div>
+              <div class="inv-meter" aria-hidden="true">
+                <span :class="{ 'is-low': m.isLow }" :style="{ width: stockPercent(m) + '%' }"></span>
+              </div>
+              <p class="inv-meta">Tracked by level</p>
+            </template>
+
+            <p v-if="m.usedIn.length > 0" class="inv-used">
+              Used in {{ m.usedIn.join(', ') }}
+            </p>
+          </MaterialCard>
+
+        </TransitionGroup>
+
+        <div v-else class="empty-state">
+          <template v-if="materials.length === 0">No materials yet. Add your first one to start tracking stock.</template>
+          <template v-else>No materials match.</template>
+        </div>
+
+        <Pager v-model="page" :total="visibleMaterials.length" :per-page="PER_PAGE" item-name="materials" />
       </div>
-      <input id="material-search" v-model="search" class="form-control inv-search" placeholder="Search materials"
-        aria-label="Search materials" />
-    </div>
 
-    <!-- ===== Material cards ===== -->
-    <TransitionGroup v-if="visibleMaterials.length > 0" name="list" tag="div" class="sk-grid">
-
-      <!-- Prop: :material.  Events: @restock and @edit (the card sends the material back). -->
-      <MaterialCard v-for="m in visibleMaterials" :key="m.id" :material="m" @restock="markRestocked"
-        @edit="openEditForm">
-        <!-- Everything in here goes into the card's <slot> -->
-
-        <!-- Quantity materials show a number -->
-        <template v-if="m.trackingMode === 'quantity'">
-          <div class="inv-qty">{{ m.quantity }}<small>{{ m.unit }}</small></div>
-          <div class="inv-meter" aria-hidden="true">
-            <span :class="{ 'is-low': m.isLow }" :style="{ width: stockPercent(m) + '%' }"></span>
-          </div>
-          <p v-if="m.lowStockThreshold !== null" class="inv-meta">
-            Low below {{ m.lowStockThreshold }} {{ m.unit }}
-          </p>
-          <!-- From the forecast -->
-          <span v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="inv-forecast">
-            📅 Runs low {{ formatDay(forecastFor(m.id).runsLowOn) }}
-          </span>
-        </template>
-
-        <!-- Level materials show Low / Medium / High -->
-        <template v-else>
-          <div class="inv-qty inv-level">{{ m.level }}</div>
-          <div class="inv-meter" aria-hidden="true">
-            <span :class="{ 'is-low': m.isLow }" :style="{ width: stockPercent(m) + '%' }"></span>
-          </div>
-          <p class="inv-meta">Tracked by level</p>
-        </template>
-
-        <p v-if="m.usedIn.length > 0" class="inv-used">
-          Used in {{ m.usedIn.join(', ') }}
-        </p>
-      </MaterialCard>
-
-    </TransitionGroup>
-
-    <div v-else class="empty-state">
-      <template v-if="materials.length === 0">No materials yet. Add your first one to start tracking stock.</template>
-      <template v-else>No materials match.</template>
+      <!-- ===== What to buy (loads its own data; :key makes it reload) ===== -->
+      <div class="mat-layout__side">
+        <WhatToBuyPanel :key="panelKey" :highlight="highlightId" @restocked="afterPanelRestock" />
+      </div>
     </div>
 
     <!-- ===================================================== -->
@@ -433,6 +446,7 @@ async function saveRestock() {
               <option value="g">grams (g)</option>
               <option value="ml">millilitres (ml)</option>
               <option value="pieces">pieces</option>
+              <option value="cm">centimetres (cm), e.g. ribbon, fabric</option>
             </select>
 
             <span class="form-label d-block">How do you track it?</span>
@@ -483,71 +497,42 @@ async function saveRestock() {
       </div>
     </div>
 
-    <!-- ===================================================== -->
-    <!-- POP-UP: Restock (quantity materials only)              -->
-    <!-- ===================================================== -->
-    <div v-if="restockTarget !== null" class="modal d-block inv-modal">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Restock {{ restockTarget.name }}</h5>
-            <button type="button" class="btn-close" aria-label="Close" @click="restockTarget = null"></button>
-          </div>
-
-          <div class="modal-body">
-            <div v-if="restockError" class="inv-banner inv-banner--danger mb-3">{{ restockError }}</div>
-            <p class="inv-meta mb-3">You have <strong>{{ restockTarget.quantity }} {{ restockTarget.unit }}</strong>
-              now.
-            </p>
-            <label for="restock-amount" class="form-label">How much did you buy?</label>
-            <div class="input-group">
-              <input id="restock-amount" v-model.number="restockAmount" type="number" min="0" class="form-control" />
-              <span class="input-group-text">{{ restockTarget.unit }}</span>
-            </div>
-            <p class="mt-3 mb-0">
-              New total: <strong>{{ restockTarget.quantity + restockAmount }} {{ restockTarget.unit }}</strong>
-            </p>
-          </div>
-
-          <div class="modal-footer">
-            <button type="button" class="btn btn-light" @click="restockTarget = null">Cancel</button>
-            <button type="button" class="btn btn-primary" @click="saveRestock">Mark as restocked</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===================================================== -->
-    <!-- POP-UP: Shopping list                                  -->
-    <!-- ===================================================== -->
-    <div v-if="showShoppingList" class="modal d-block inv-modal">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">🛒 Shopping list</h5>
-            <button type="button" class="btn-close" aria-label="Close" @click="showShoppingList = false"></button>
-          </div>
-
-          <div class="modal-body">
-            <p v-if="lowMaterials.length === 0" class="inv-meta">Nothing is running low!</p>
-            <div v-for="m in lowMaterials" :key="m.id" class="inv-shop-row">
-              <div>
-                <strong>{{ m.name }}</strong>
-                <p v-if="m.trackingMode === 'quantity'" class="inv-meta">
-                  Have {{ m.quantity }} {{ m.unit }} · low below {{ m.lowStockThreshold }}
-                </p>
-                <p v-else class="inv-meta">Level is low</p>
-              </div>
-              <span class="status status--danger">Low</span>
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button type="button" class="btn btn-light" @click="showShoppingList = false">Close</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- ===== Restock pop-up (shared component), from a card's Restock button ===== -->
+    <RestockModal v-if="restockRows" :rows="restockRows" @close="restockRows = null" @saved="afterCardRestock" />
 
   </div>
 </template>
+<style scoped>
+/* Cards on the left, the "What to buy" panel on the right */
+.mat-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 1.25rem;
+  align-items: start;
+}
+/* The panel stays in view while scrolling through the cards (80px = below the navbar) */
+.mat-layout__side { position: sticky; top: 80px; }
+
+/* 4 cards per row on a wide screen */
+.mat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+  align-items: stretch;
+}
+
+@media (max-width: 1399.98px) {
+  .mat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* Tablets: panel goes above the cards */
+@media (max-width: 1199.98px) {
+  .mat-layout { grid-template-columns: 1fr; }
+  .mat-layout__side { position: static; order: -1; }
+}
+@media (max-width: 767.98px) {
+  .mat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 479.98px) {
+  .mat-grid { grid-template-columns: 1fr; }
+}
+</style>

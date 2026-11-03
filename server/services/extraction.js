@@ -351,9 +351,22 @@ export async function parseOrder(message, sellerId) {
     } else {
       product = fuse.search(item.name)[0]?.item ?? null;
       if (!product) problems.push(`No matching product for "${item.name}"`);
-      else if (item.variant && !REGULAR_WORDS.has(item.variant.toLowerCase())) {
-        problems.push(`Could not match variant "${item.variant}" for ${product.name}`);
-      }
+    }
+
+    // the customer asked for a variant but the word matching didn't land on one:
+    // try a typo-tolerant match within THIS product's variants only
+    const wantsVariant =
+      item.variant && !REGULAR_WORDS.has(item.variant.trim().toLowerCase());
+
+    if (product && !variant && wantsVariant) {
+      const variantFuse = new Fuse(product.variants ?? [], {
+        keys: ["name"],
+        threshold: 0.4,
+        ignoreLocation: true,
+      });
+      const vHit = variantFuse.search(item.variant)[0]?.item;
+      if (vHit) variant = vHit;
+      else problems.push(`Could not match variant "${item.variant}" for ${product.name}`);
     }
 
     return {
