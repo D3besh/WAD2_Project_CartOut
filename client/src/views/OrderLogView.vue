@@ -14,6 +14,23 @@ const paymentFilter = ref('all'); // all | paid | deposit | unpaid
 const dueSort = ref('nearest');   // nearest | farthest
 const search = ref('');           // order number or customer name typed in the search bar
 
+// ---- Paging: 12 orders per page ----
+const PAGE_SIZE = 12;
+const page = ref(1); // the page being shown, starting at 1
+
+// Status tabs (replaces the old Order Status dropdown)
+const STATUS_TABS = [
+  { value: 'in-progress', label: 'In progress' },
+  { value: 'ready', label: 'Ready' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'refunded', label: 'Refunded' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+// How many orders are in each tab, e.g. { 'in-progress': 23, ready: 6, ... }
+// null until loaded, so the tabs just show their names at first.
+const counts = ref(null);
+
 
 // True while something is typed in the search bar
 const isSearching = computed(() => search.value.trim() !== '');
@@ -67,6 +84,38 @@ async function fetchOrders() {
 }
 
 
+// Loads every order once and counts how many belong to each tab.
+// Uses the same rules as the server's filters:
+//   In progress / Ready / Completed / Cancelled → by status
+//   Refunded → any order with a refund recorded
+async function fetchCounts() {
+  try {
+    const response = await axios.get('/api/orders');
+    const all = response.data;
+
+    const result = { 'in-progress': 0, ready: 0, completed: 0, refunded: 0, cancelled: 0 };
+    for (const order of all) {
+      if (result[order.status] !== undefined) {
+        result[order.status] += 1;
+      }
+      if (order.refundAmount > 0) {
+        result.refunded += 1;
+      }
+    }
+
+    counts.value = result;
+  } catch (err) {
+    counts.value = null; // the tabs still work, just without numbers
+  }
+}
+
+// "In progress (23)", or just "In progress" if the counts haven't loaded
+function tabLabel(tab) {
+  if (!counts.value) return tab.label;
+  return tab.label + ' (' + counts.value[tab.value] + ')';
+}
+
+
 // True if the order number or customer name contains what was typed,
 // e.g. "261028-03", "ord-261028" or "priya". Capital letters don't matter.
 function matchesSearch(order) {
@@ -97,6 +146,57 @@ const visibleOrders = computed(() => {
   });
 });
 
+
+// ---- Paging ----
+const totalPages = computed(() => Math.max(1, Math.ceil(visibleOrders.value.length / PAGE_SIZE)));
+
+// Only the 12 orders on the current page
+const pagedOrders = computed(() => {
+  const start = (page.value - 1) * PAGE_SIZE;
+  return visibleOrders.value.slice(start, start + PAGE_SIZE);
+});
+
+// For "Showing 13–23 of 23 orders"
+const showingFrom = computed(() => (visibleOrders.value.length === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1));
+const showingTo = computed(() => Math.min(page.value * PAGE_SIZE, visibleOrders.value.length));
+
+// The page buttons: at most 5 numbers, kept around the current page.
+//   page 1 of 35  → 1 2 3 4 5
+//   page 10 of 35 → 8 9 10 11 12
+//   page 35 of 35 → 31 32 33 34 35
+const MAX_PAGE_BUTTONS = 5;
+
+const pageNumbers = computed(() => {
+  const total = totalPages.value;
+
+  // try to put the current page in the middle
+  let start = page.value - Math.floor(MAX_PAGE_BUTTONS / 2);
+  let end = start + MAX_PAGE_BUTTONS - 1;
+
+  // near the start: don't go below page 1
+  if (start < 1) {
+    start = 1;
+    end = Math.min(total, MAX_PAGE_BUTTONS);
+  }
+
+  // near the end: don't go past the last page
+  if (end > total) {
+    end = total;
+    start = Math.max(1, total - MAX_PAGE_BUTTONS + 1);
+  }
+
+  const list = [];
+  for (let i = start; i <= end; i++) {
+    list.push(i);
+  }
+  return list;
+});
+
+function goToPage(n) {
+  if (n < 1 || n > totalPages.value) return;
+  page.value = n;
+  window.scrollTo({ top: 0, behavior: 'smooth' }); // useful on phones
+}
 
 const hasChanges = computed(
   () =>
@@ -132,8 +232,11 @@ const stageButtons = computed(() => {
 });
 
 
+// "Select all" ticks the orders on the current page only
 const allSelected = computed(
-  () => visibleOrders.value.length > 0 && selectedIds.value.length === visibleOrders.value.length
+  () =>
+    pagedOrders.value.length > 0 &&
+    pagedOrders.value.every((o) => selectedIds.value.includes(o._id))
 );
 
 
@@ -169,10 +272,15 @@ function stopSelecting() {
 
 
 function toggleSelectAll() {
+  const pageIds = pagedOrders.value.map((o) => o._id);
+
   if (allSelected.value) {
-    selectedIds.value = [];
+    // untick this page's orders, keep ticks on other pages
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.includes(id));
   } else {
-    selectedIds.value = visibleOrders.value.map((o) => o._id);
+    // tick this page's orders (without adding the same id twice)
+    const set = new Set([...selectedIds.value, ...pageIds]);
+    selectedIds.value = [...set];
   }
 }
 
@@ -200,6 +308,7 @@ async function bulkUpdate(newStatus, label) {
 
     stopSelecting();
     await fetchOrders(); // updated orders move out of this filter
+    fetchCounts();       // and the tab numbers change
   } catch (err) {
     bulkError.value = err.response?.data?.message || 'Could not update the orders.';
   } finally {
@@ -208,7 +317,10 @@ async function bulkUpdate(newStatus, label) {
 }
 
 
-onMounted(fetchOrders);
+onMounted(() => {
+  fetchOrders();
+  fetchCounts();
+});
 watch(statusFilter, fetchOrders);
 // Reload only when searching starts or stops, not on every key typed
 watch(isSearching, fetchOrders);
@@ -219,20 +331,51 @@ watch([statusFilter, paymentFilter, search], () => {
   selectedIds.value = [];
   if (statusFilter.value === 'cancelled' && !isSearching.value) selecting.value = false;
 });
+
+
+// A different tab, filter, sort or search shows a different list, so go back to page 1
+watch([statusFilter, paymentFilter, dueSort, search], () => {
+  page.value = 1;
+});
+
+// If the list gets shorter (e.g. after a bulk update), don't stay on a page that no longer exists
+watch(totalPages, (n) => {
+  if (page.value > n) page.value = n;
+});
+
 </script>
 
 
 <template>
   <div>
-    <header class="page-header">
-      <div>
-        <h1>Order log</h1>
-        <p>Your orders</p>
+    <!-- Title, status tabs (md and up) and Select orders -->
+    <header class="d-flex flex-wrap align-items-center gap-3 mb-3">
+      <div class="me-md-2">
+        <h1 class="h3 mb-0">Order log</h1>
+        <p class="text-muted mb-0">Your orders</p>
       </div>
+
+      <div class="status-tabs d-none d-md-flex" role="tablist" aria-label="Order status">
+        <button
+          v-for="tab in STATUS_TABS"
+          :key="tab.value"
+          type="button"
+          role="tab"
+          class="status-tab"
+          :class="{ 'is-active': statusFilter === tab.value && !isSearching }"
+          :aria-selected="statusFilter === tab.value"
+          :disabled="isSearching"
+          :data-testid="`tab-${tab.value}`"
+          @click="statusFilter = tab.value"
+        >
+          {{ tabLabel(tab) }}
+        </button>
+      </div>
+
       <button
         v-if="canSelect && !selecting"
         type="button"
-        class="btn btn-outline-primary btn-sm"
+        class="btn btn-outline-primary btn-sm ms-auto"
         data-testid="bulk-select"
         @click="startSelecting"
       >
@@ -241,68 +384,62 @@ watch([statusFilter, paymentFilter, search], () => {
     </header>
 
 
-    <div
-      class="sk-card mb-4"
-      style="display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 0.85rem 1.15rem;"
-    >
-      <div style="display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap;">
-        <div class="filter-field">
-          <label class="form-label" for="statusFilter">Order Status</label>
-          <select id="statusFilter" v-model="statusFilter" class="form-select form-select-sm" data-testid="filter-status"
-            :disabled="isSearching">
-            <option value="in-progress">In progress</option>
-            <option value="ready">Ready</option>
-            <option value="completed">Completed</option>
-            <option value="refunded">Refunded</option>
-            <option value="cancelled">Cancelled</option>
+    <!-- Search and filters, all on one row from md up -->
+    <div class="sk-card mb-3 py-2 px-3">
+      <div class="row g-2 align-items-center">
+        <!-- Phone: status is a dropdown instead of tabs -->
+        <div class="col-12 d-md-none">
+          <label class="visually-hidden" for="statusFilter">Order status</label>
+          <select
+            id="statusFilter"
+            v-model="statusFilter"
+            class="form-select form-select-sm"
+            data-testid="filter-status"
+            :disabled="isSearching"
+          >
+            <option v-for="tab in STATUS_TABS" :key="tab.value" :value="tab.value">{{ tabLabel(tab) }}</option>
           </select>
         </div>
 
-
-        <div class="filter-field">
-          <label class="form-label" for="paymentFilter">Payment</label>
-          <select id="paymentFilter" v-model="paymentFilter" class="form-select form-select-sm"
-            :disabled="isSearching">
-            <option value="all">All</option>
-            <option value="paid">Paid</option>
-            <option value="deposit">Deposit</option>
-            <option value="unpaid">Unpaid</option>
-          </select>
-        </div>
-
-
-        <div class="filter-field">
-          <label class="form-label" for="dueSort">Due date</label>
-          <select id="dueSort" v-model="dueSort" class="form-select form-select-sm">
-            <option value="nearest">Nearest first</option>
-            <option value="farthest">Farthest first</option>
-          </select>
-        </div>
-      </div>
-
-
-      <!-- Search (fills the rest of the bar) and Reset on the right -->
-      <div class="search-group">
-        <div class="filter-field search-field">
-          <label class="form-label" for="orderSearch">Search</label>
+        <div class="col-12 col-md">
+          <label class="visually-hidden" for="orderSearch">Search</label>
           <input
             id="orderSearch"
             v-model="search"
             type="search"
             class="form-control form-control-sm"
-            placeholder="Order no. or customer name"
+            placeholder="Search order no. or customer name"
             data-testid="order-search"
           />
         </div>
 
-        <button
-          v-if="hasChanges"
-          type="button"
-          class="btn btn-light btn-sm"
-          @click="clearFilters"
-        >
-          Reset
-        </button>
+        <div class="col-6 col-md-auto">
+          <div class="input-group input-group-sm">
+            <label class="input-group-text" for="paymentFilter">Payment</label>
+            <select id="paymentFilter" v-model="paymentFilter" class="form-select" :disabled="isSearching">
+              <option value="all">All</option>
+              <option value="paid">Paid</option>
+              <option value="deposit">Deposit</option>
+              <option value="unpaid">Unpaid</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="col-6 col-md-auto">
+          <div class="input-group input-group-sm">
+            <label class="input-group-text" for="dueSort">Due</label>
+            <select id="dueSort" v-model="dueSort" class="form-select">
+              <option value="nearest">Nearest first</option>
+              <option value="farthest">Farthest first</option>
+            </select>
+          </div>
+        </div>
+
+        <div v-if="hasChanges" class="col-12 col-md-auto">
+          <button type="button" class="btn btn-light btn-sm w-100" @click="clearFilters">
+            Reset
+          </button>
+        </div>
       </div>
     </div>
 
@@ -325,7 +462,9 @@ watch([statusFilter, paymentFilter, search], () => {
         <div class="form-check mb-0">
           <input id="selectAll" type="checkbox" class="form-check-input"
             :checked="allSelected" @change="toggleSelectAll" />
-          <label for="selectAll" class="form-check-label">Select all</label>
+          <label for="selectAll" class="form-check-label">
+            {{ totalPages > 1 ? 'Select all on this page' : 'Select all' }}
+          </label>
         </div>
         <strong>{{ selectedIds.length }} selected</strong>
       </div>
@@ -360,26 +499,86 @@ watch([statusFilter, paymentFilter, search], () => {
 
     <div v-if="loading" class="empty-state">Loading orders...</div>
     <div v-else-if="error" class="empty-state text-danger">{{ error }}</div>
-    <TransitionGroup v-else-if="visibleOrders.length" name="list" tag="div" class="sk-grid">
-      <div v-for="o in visibleOrders" :key="o._id" class="order-slot">
-        <!-- While selecting, the whole card ticks its checkbox instead of opening the order -->
-        <label
-          v-if="selecting"
-          class="select-wrap"
-          :class="{ 'is-selected': selectedIds.includes(o._id) }"
+
+    <template v-else-if="visibleOrders.length">
+      <!--
+        Bootstrap grid, 12 orders per page:
+          phone: 1 per row · md: 2 · lg: 3 · xl: 4 (4 × 3 = one full page)
+      -->
+      <TransitionGroup name="list" tag="div" class="row g-3">
+        <div
+          v-for="o in pagedOrders"
+          :key="o._id"
+          class="col-12 col-md-6 col-lg-4 col-xl-3 order-slot"
         >
-          <input
-            v-model="selectedIds"
-            type="checkbox"
-            :value="o._id"
-            class="form-check-input select-box"
-            :aria-label="'Select order for ' + o.customerName"
-          />
-          <OrderCard :order="o" class="select-card" tabindex="-1" />
-        </label>
-        <OrderCard v-else :order="o" />
-      </div>
-    </TransitionGroup>
+          <!-- While selecting, the whole card ticks its checkbox instead of opening the order -->
+          <label
+            v-if="selecting"
+            class="select-wrap"
+            :class="{ 'is-selected': selectedIds.includes(o._id) }"
+          >
+            <input
+              v-model="selectedIds"
+              type="checkbox"
+              :value="o._id"
+              class="form-check-input select-box"
+              :aria-label="'Select order for ' + o.customerName"
+            />
+            <OrderCard :order="o" class="select-card" tabindex="-1" />
+          </label>
+          <OrderCard v-else :order="o" />
+        </div>
+      </TransitionGroup>
+
+      <!-- Paging -->
+      <nav
+        class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-2 mt-3"
+        aria-label="Order pages"
+      >
+        <span class="small text-muted text-nowrap order-2 order-md-1">
+          Showing <strong class="text-body">{{ showingFrom }}–{{ showingTo }}</strong>
+          of {{ visibleOrders.length }} {{ visibleOrders.length === 1 ? 'order' : 'orders' }}
+        </span>
+
+        <ul v-if="totalPages > 1" class="pagination pagination-sm flex-wrap justify-content-center mb-0 order-1 order-md-2">
+          <!-- First page -->
+          <li class="page-item" :class="{ disabled: page === 1 }">
+            <button type="button" class="page-link" aria-label="First page" @click="goToPage(1)">«</button>
+          </li>
+          <!-- Previous page -->
+          <li class="page-item" :class="{ disabled: page === 1 }">
+            <button type="button" class="page-link" aria-label="Previous page" @click="goToPage(page - 1)">‹</button>
+          </li>
+
+          <!-- Up to 5 page numbers around the current page -->
+          <li
+            v-for="n in pageNumbers"
+            :key="n"
+            class="page-item"
+            :class="{ active: n === page }"
+          >
+            <button
+              type="button"
+              class="page-link"
+              :aria-current="n === page ? 'page' : null"
+              @click="goToPage(n)"
+            >
+              {{ n }}
+            </button>
+          </li>
+
+          <!-- Next page -->
+          <li class="page-item" :class="{ disabled: page === totalPages }">
+            <button type="button" class="page-link" aria-label="Next page" @click="goToPage(page + 1)">›</button>
+          </li>
+          <!-- Last page -->
+          <li class="page-item" :class="{ disabled: page === totalPages }">
+            <button type="button" class="page-link" aria-label="Last page" @click="goToPage(totalPages)">»</button>
+          </li>
+        </ul>
+      </nav>
+    </template>
+
     <div v-else-if="isSearching" class="empty-state">
       No orders match "{{ search.trim() }}".
     </div>
@@ -394,29 +593,68 @@ watch([statusFilter, paymentFilter, search], () => {
 
 
 <style scoped>
-.filter-field {
-  min-width: 160px;
+/* Layout uses Bootstrap classes; this is only colours and small details. */
+
+/* ---- Status tabs ---- */
+.status-tabs {
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--sk-brand-soft);
+  border-radius: 12px;
 }
 
-
-.search-group {
-  flex: 1;            /* take up the rest of the filter bar */
-  min-width: 240px;   /* on small screens, wrap below the filters instead */
-  display: flex;
-  align-items: flex-end;
-  gap: 1rem;
+.status-tab {
+  border: 0;
+  background: none;
+  padding: 0.4rem 0.9rem;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--sk-muted);
+  white-space: nowrap;
 }
 
-
-.search-field {
-  flex: 1;            /* the search box stretches; Reset keeps its size */
+.status-tab:hover:not(:disabled) {
+  color: var(--sk-text);
 }
 
+.status-tab.is-active {
+  background: var(--sk-surface);
+  color: var(--sk-text);
+  box-shadow: 0 1px 3px rgb(15 14 71 / 0.12);
+}
 
-.filter-field .form-label {
+.status-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Filter bar ---- */
+.input-group-text {
   font-size: 0.8rem;
   color: var(--sk-muted);
-  margin-bottom: 0.25rem;
+  background: var(--sk-bg);
+}
+
+/* ---- Paging buttons in the brand colour ---- */
+.pagination {
+  --bs-pagination-color: var(--sk-text);
+  --bs-pagination-hover-color: var(--sk-text);
+  --bs-pagination-hover-bg: var(--sk-brand-soft);
+  --bs-pagination-focus-color: var(--sk-text);
+  --bs-pagination-focus-box-shadow: 0 0 0 0.2rem var(--sk-brand-soft);
+  --bs-pagination-active-bg: var(--sk-brand);
+  --bs-pagination-active-border-color: var(--sk-brand);
+  --bs-pagination-border-color: var(--sk-border);
+  gap: 0.35rem;
+}
+
+.pagination .page-link {
+  min-width: 2.1rem;
+  text-align: center;
+  border-radius: var(--sk-radius-btn) !important;
+  font-weight: 600;
 }
 
 
