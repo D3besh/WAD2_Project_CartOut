@@ -8,7 +8,7 @@ import Pager from '../components/Pager.vue';
 import WhatToBuyPanel from '../components/forecast/WhatToBuyPanel.vue';
 import RestockModal from '../components/forecast/RestockModal.vue';
 import '../assets/inventory.css'; // styles for the Materials and Products pages
-import { formatDay, formatAmount, restockRowFor } from '../utils/forecast.js';
+import { formatDay, formatAmount, restockRowFor, daysBetween } from '../utils/forecast.js';
 
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
@@ -192,6 +192,13 @@ function forecastFor(materialId) {
   }
   let found = forecast.value.materials.find((f) => f.id === materialId);
   return found || null;
+}
+
+// "Low in 6 days" / "Low in 1 day" / "Low today" (same wording as the What to buy panel)
+function lowInText(runsLowOn) {
+  let days = daysBetween(forecast.value.today, runsLowOn);
+  if (days <= 0) return 'Low today';
+  return 'Low in ' + days + (days === 1 ? ' day' : ' days');
 }
 
 // How full the stock bar on a card is (0–100).
@@ -389,8 +396,10 @@ async function afterPanelRestock(names) {
                 Low below {{ formatAmount(m.lowStockThreshold, m.unit) }}
               </p>
               <!-- From the forecast -->
-              <span v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="inv-forecast">
-                📅 Runs low {{ formatDay(forecastFor(m.id).runsLowOn) }}
+              <!-- title = the exact date, shown when you hover -->
+              <span v-if="forecastFor(m.id) && forecastFor(m.id).runsLowOn" class="inv-forecast"
+                :title="formatDay(forecastFor(m.id).runsLowOn)">
+                📅 {{ lowInText(forecastFor(m.id).runsLowOn) }}
               </span>
             </template>
 
@@ -446,7 +455,7 @@ async function afterPanelRestock(names) {
               <option value="g">grams (g)</option>
               <option value="ml">millilitres (ml)</option>
               <option value="pieces">pieces</option>
-              <option value="cm">centimetres (cm), e.g. ribbon, fabric</option>
+              <option value="cm">centimetres (cm)</option>
             </select>
 
             <span class="form-label d-block">How do you track it?</span>
