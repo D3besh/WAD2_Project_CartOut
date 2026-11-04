@@ -164,4 +164,54 @@ router.delete('/:id', handle(async (req, res) => {
   res.status(204).end();
 }));
 
+import mongoose from 'mongoose';
+import { computeDemandRatios, suggestPrice } from '../services/pricing.js';
+
+router.get('/price-suggestions', requireAuth, async (req, res) => {
+
+  try {
+
+
+    const sellerId = new mongoose.Types.ObjectId(req.session.userId);
+    const margin = Math.min(0.9, Math.max(0, Number(req.query.margin) || 0.4));
+
+    const [products, ratios] = await Promise.all([
+      Product.find({ seller: sellerId, archived: false }),
+      computeDemandRatios(sellerId),
+    ]);
+
+    const suggestions = products.map(p => {
+      const ratioFor = (variantId) => ratios.get(`${p._id}:${variantId ?? 'base'}`) ?? 1;
+      const priceFor = (cost, ratio) => suggestPrice({ cost, targetMargin: margin, demandRatio: ratio });
+
+      return {
+        productId: p.id,
+        name: p.name,
+        cost: p.cost,
+        currentPrice: p.price,
+        demandRatio: ratioFor(null),
+        suggestedPrice: priceFor(p.cost, ratioFor(null)),
+        variants: p.variants.map(v => {
+          const cost = v.cost ?? p.cost;
+          const demandRatio = ratioFor(v._id);
+          return {
+            variantId: v.id,
+            name: v.name,
+            cost,
+            currentPrice: v.price ?? p.price,
+            demandRatio,
+            suggestedPrice: priceFor(cost, demandRatio),
+          };
+        }),
+      };
+    });
+
+    console.log(JSON.stringify({ suggestions }, null, 2)); // pretty-printed
+    res.json({ suggestions });
+  } catch (err) {
+    console.error('price-suggestions failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

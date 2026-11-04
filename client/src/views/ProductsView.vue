@@ -21,6 +21,11 @@ const banner = ref(null);         // message under the navbar, e.g. { type: 'suc
 const search = ref('');
 const forecast = ref(null);       // the 30-day forecast from the server (null = not loaded)
 
+const suggestions = ref([]);          // from /api/products/price-suggestions
+const suggestionsError = ref('');
+const showSuggestions = ref(true);
+const margin = ref(40);               // target margin in %, sent to the server as 0.40
+
 // Paging: 12 cards per page
 const PER_PAGE = 12;
 const page = ref(1);
@@ -46,6 +51,7 @@ async function loadData() {
   }
 
   await loadForecast();
+  await loadSuggestions();
 }
 
 // Load the forecast (for the "Tomorrow" column)
@@ -56,6 +62,24 @@ async function loadForecast() {
   } catch (error) {
     // The forecast is extra information, so if it fails the page still works
     console.error('Forecast failed:', getErrorText(error));
+  }
+}
+
+// Price suggestions (extra info, so a failure never blocks the page)
+async function loadSuggestions() {
+  // keep the margin in a sensible range
+  if (!(margin.value >= 0)) margin.value = 0;
+  if (margin.value > 90) margin.value = 90;
+
+  try {
+    let response = await axios.get('/api/products/price-suggestions', {
+      params: { margin: margin.value / 100 },
+    });
+    suggestions.value = response.data.suggestions;
+    suggestionsError.value = '';
+  } catch (error) {
+    suggestions.value = [];
+    suggestionsError.value = getErrorText(error);
   }
 }
 
@@ -141,6 +165,62 @@ const productCards = computed(() => {
 
   return list;
 });
+
+// One row per product, plus one per variant. Follows the search box too.
+const suggestionRows = computed(() => {
+  let rows = [];
+  let text = search.value.toLowerCase();
+
+  for (let s of suggestions.value) {
+    if (text !== '' && !s.name.toLowerCase().includes(text)) continue;
+
+    rows.push({
+      key: s.productId,
+      productId: s.productId,
+      name: s.name,
+      option: s.variants.length > 0 ? 'Regular' : '',
+      cost: s.cost,
+      current: s.currentPrice,
+      suggested: s.suggestedPrice,
+      demandRatio: s.demandRatio,
+    });
+
+    for (let v of s.variants) {
+      rows.push({
+        key: s.productId + ':' + v.variantId,
+        productId: s.productId,
+        name: s.name,
+        option: v.name,
+        cost: v.cost,
+        current: v.currentPrice,
+        suggested: v.suggestedPrice,
+        demandRatio: v.demandRatio,
+      });
+    }
+  }
+  return rows;
+});
+
+// "+$0.50", "-$1.00", or "" when there's no change or no suggestion
+function changeText(row) {
+  if (row.suggested === null) return '';
+  let diff = row.suggested - row.current;
+  if (Math.abs(diff) < 0.005) return 'No change';
+  return (diff > 0 ? '+$' : '-$') + Math.abs(diff).toFixed(2);
+}
+
+function changeClass(row) {
+  if (row.suggested === null) return '';
+  let diff = row.suggested - row.current;
+  if (Math.abs(diff) < 0.005) return 'ps-same';
+  return diff > 0 ? 'ps-up' : 'ps-down';
+}
+
+// Open the existing Edit pop-up for a product
+function editFromSuggestion(productId) {
+  let product = products.value.find((p) => p.id === productId);
+  if (product) openEditForm(product);
+}
 
 // Tomorrow's forecast for one row: { orders, extra }, or null if there's no forecast yet
 // Is there enough stock for tomorrow? Orders already logged have taken their materials
@@ -405,6 +485,74 @@ async function deleteProduct() {
 
     <!-- ===== What just happened (sticks under the navbar) ===== -->
     <ActionBanner :message="banner" @close="banner = null" />
+
+        <!-- ===== Price suggestions ===== -->
+    <section class="sk-card ps-section mb-3" data-testid="price-suggestions">
+      <div class="ps-header">
+        <h2 class="ps-title">Price suggestions</h2>
+
+        <label class="ps-margin" for="ps-margin">
+          Target margin (%)
+          <input
+            id="ps-margin"
+            v-model.number="margin"
+            type="number"
+            min="0"
+            max="90"
+            step="5"
+            class="form-control form-control-sm"
+            @change="loadSuggestions"
+          />
+        </label>
+
+        <button type="button" class="btn btn-light btn-sm" @click="showSuggestions = !showSuggestions">
+          {{ showSuggestions ? 'Hide' : 'Show' }}
+        </button>
+      </div>
+
+      <template v-if="showSuggestions">
+        <p v-if="suggestionsError" class="inv-meta mb-0">Couldn't load suggestions: {{ suggestionsError }}</p>
+        <p v-else-if="suggestionRows.length === 0" class="inv-meta mb-0">No products to suggest prices for.</p>
+
+        <div v-else class="ps-scroll">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th class="text-end">Cost</th>
+                <th class="text-end">Current</th>
+                <th class="text-end">Suggested</th>
+                <th>Change</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in suggestionRows" :key="row.key">
+                <td>
+                  {{ row.name }}<span v-if="row.option" class="ps-option"> · {{ row.option }}</span>
+                </td>
+                <td class="text-end">{{ row.cost !== null ? '$' + row.cost.toFixed(2) : '—' }}</td>
+                <td class="text-end">${{ row.current.toFixed(2) }}</td>
+
+                <td v-if="row.suggested === null" class="text-end ps-missing" colspan="2">Add a cost to get a suggestion</td>
+                <template v-else>
+                  <td class="text-end"><strong>${{ row.suggested.toFixed(2) }}</strong></td>
+                  <td :class="changeClass(row)">
+                    {{ changeText(row) }}
+                    <span v-if="row.demandRatio > 1.05" title="Selling faster than usual"> ↑ demand</span>
+                    <span v-else-if="row.demandRatio < 0.95" title="Selling slower than usual"> ↓ demand</span>
+                  </td>
+                </template>
+
+                <td class="text-end">
+                  <button type="button" class="btn btn-outline-primary btn-sm" @click="editFromSuggestion(row.productId)">Edit</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </section>
 
     <!-- ===== Search ===== -->
     <div class="sk-card inv-toolbar mb-3">
