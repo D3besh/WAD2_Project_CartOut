@@ -8,7 +8,6 @@ const links = [
   { to: '/orders', label: 'Order log' },
   { to: '/materials', label: 'Materials' },
   { to: '/products', label: 'Products' },
-  { to: '/forecast', label: 'Forecast' },
 ];
 
 // Hamburger
@@ -125,6 +124,12 @@ function closeHamburger() {
   outline-offset: 2px;
 }
 
+/* Space between the links on a wide screen */
+@media (min-width: 992px) {
+  .navbar-nav {
+    gap: 0.75rem;
+  }
+}
 /* Hamburger button: white lines on the dark bar */
 .navbar-toggler {
   border-color: rgb(255 255 255 / 0.3);
