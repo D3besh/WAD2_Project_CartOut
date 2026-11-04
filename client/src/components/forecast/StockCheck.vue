@@ -1,7 +1,7 @@
 <script setup>
 // Stock check for ONE item on the New order page, shown under the product / qty row:
 //   ✓ You can make 30, enough for this order
-//   ⚠ You can only make 2 with your current Butter (300 g left, 150 g each). Buy more before Fri, 6 Nov.
+//   ⚠ You can only make 2 with your current Butter (300 g left, 150 g each). Buy 150 g more Butter before Fri, 6 Nov.
 // It loads the materials itself. There's no buy button here: buying is done later, from the
 // "What to buy" list on the Materials page. This only helps decide whether to take the order.
 //
@@ -26,6 +26,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { checkOrderLine } from '../../utils/forecast.js';
+import { fullRecipe } from '../../utils/capacity.js';
 
 const props = defineProps({
   product: Object,
@@ -81,6 +82,63 @@ const shortBecauseOfOthers = computed(() => {
   let alone = checkOrderLine(props.product, props.variant, props.quantity, allMaterials.value);
   return alone !== null && alone.enough;
 });
+
+// =====================================================
+// HOW MUCH MORE TO BUY  ("Buy 1 kg more Butter and 300 g more Sugar")
+// =====================================================
+// Every countable material this item is short of, the bottleneck first.
+//   buy = (this item's quantity × amount per unit) − what's left after the other items
+// That's how much more the WHOLE order needs of that material, so if two items share
+// Butter, both notes show the same amount (don't add them up).
+// Level materials (Low / Medium / High) have no number, so they're left out.
+const toBuy = computed(() => {
+  if (!check.value || check.value.enough) return [];
+  let list = [];
+  for (let line of fullRecipe(props.product, props.variant || null)) {
+    let m = leftForThisItem.value.find((x) => String(x.id) === String(line.material));
+    if (!m || m.trackingMode === 'level') continue;
+    let buy = line.amountPerUnit * props.quantity - m.quantity;
+    buy = Math.round(buy * 1e6) / 1e6; // clear floating-point dust (1000.0000001 would round up to 1.1 kg)
+    if (buy > 0) list.push({ name: m.name, text: formatBuyAmount(buy, m.unit) });
+  }
+  list.sort((a, b) => (a.name === check.value.limitedBy ? -1 : b.name === check.value.limitedBy ? 1 : 0));
+  return list;
+});
+
+// "1 kg more Butter", "1 kg more Butter and 300 g more Sugar", "A, B and C"
+const toBuyText = computed(() => {
+  let parts = toBuy.value.map((b) => b.text + ' more ' + b.name);
+  if (parts.length <= 1) return parts.join('');
+  return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+});
+
+// Like formatAmount (utils/forecast.js), but always rounds UP, so the seller never
+// buys too little: 1040 g → "1.1 kg" (formatAmount would say "1 kg").
+function formatBuyAmount(amount, unit) {
+  let big = null;
+  let bigUnit = '';
+  if ((unit === 'g' || unit === 'ml') && amount >= 1000) {
+    big = amount / 1000;
+    bigUnit = unit === 'g' ? 'kg' : 'L';
+  } else if (unit === 'cm' && amount >= 100) {
+    big = amount / 100;
+    bigUnit = 'm';
+  }
+  if (big !== null) {
+    // 10 and above: whole number. Below 10: one decimal. Both rounded up.
+    let shown = big >= 10 ? Math.ceil(big) : Math.ceil(big * 10) / 10;
+    return shown + ' ' + bigUnit;
+  }
+  return Math.ceil(amount) + ' ' + unit;
+}
+
+// "(2 kg left, 150 g each)". When the other items have used it all up, "none left"
+// reads better than "-500 g left".
+const leftText = computed(() => {
+  if (!check.value || !check.value.left) return '';
+  let row = check.value.restockRow;
+  return row && row.quantity <= 0 ? 'none left' : check.value.left + ' left';
+});
 </script>
 
 <template>
@@ -90,8 +148,9 @@ const shortBecauseOfOthers = computed(() => {
 
   <div v-else-if="check" class="stock-check is-short" role="status">
     ⚠ <strong>You can only make {{ check.canMake }}</strong>{{ shortBecauseOfOthers ? ' after your other items' : '' }}
-    with your current {{ check.limitedBy }}<template v-if="check.left"> ({{ check.left }} left, {{ check.perUnit }} each)</template>.
-    Buy more {{ check.limitedBy }}<template v-if="dueText"> before {{ dueText }}</template>. You can still save the order.
+    with your current {{ check.limitedBy }}<template v-if="leftText"> ({{ leftText }}, {{ check.perUnit }} each)</template>.
+    <!-- Nothing countable to list (e.g. a deleted material): fall back to the old wording -->
+    Buy {{ toBuy.length ? toBuyText : 'more ' + check.limitedBy }}<template v-if="dueText"> before {{ dueText }}</template>. You can still save the order.
   </div>
 </template>
 
