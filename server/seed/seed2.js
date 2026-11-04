@@ -1,13 +1,21 @@
 // run using node seed/seed2.js
 //
 // Seeds two sellers (Amy, Ben), their materials and products, a few recent
-// hand-written orders, and 12 weeks of PAST orders so the forecast has history to learn from.
+// hand-written orders, and ~14 weeks (HISTORY_DAYS) of PAST orders so the forecast
+// and the price-suggestion margin estimate have history to learn from.
 //
 // Each product has a `demand` assumption that drives its history:
-//   weekday : base units sold on Sun, Mon, Tue, Wed, Thu, Fri, Sat
-//   trend   : [start, end] multiplier across the 12 weeks (rising > 1, falling < 1)
-//   events  : temporary spikes/dips, as { fromDaysAgo, toDaysAgo, multiplier, label }
-// Daily units = weekday base × trend × events × small random noise, split into orders of 1–3 units.
+//   weekday    : base units sold on Sun, Mon, Tue, Wed, Thu, Fri, Sat
+//   trend      : [start, end] multiplier across the history (rising > 1, falling < 1)
+//   events     : temporary spikes/dips, as { fromDaysAgo, toDaysAgo, multiplier, label }
+//   elasticity : how strongly sales react to price (e.g. -2.5: a 10% dearer price → ~22% fewer sales)
+//   priceOffset: shifts the product's weekly price cycle so products don't all change price together
+// Daily units = weekday base × trend × events × price effect × small random noise,
+// split into orders of 1–3 units.
+//
+// PRICES VARY BY WEEK: each week a product is sold at (normal price × a step from PRICE_STEPS),
+// rounded to $0.50. Every order item stores the price charged (unitPrice), so the
+// server can estimate price elasticity from the history.
 //
 // Every history order belongs to a realistic customer (name, contact, platform, and a delivery
 // address when they have one). Each seller has a pool of repeat customers plus some one-off buyers.
@@ -65,6 +73,25 @@ function weightedPick(items, weightOf) {
     if (r < 0) return i;
   }
   return items[items.length - 1];
+}
+
+// ---------- Price variation ----------
+// Each week the shop charges (normal price × one of these steps), cycled through the history.
+// Narrow this (e.g. [1, 1.1, 0.95, 1.15, 0.9]) for gentler price swings.
+const PRICE_STEPS = [1, 1.15, 0.9, 1.2, 0.95, 1.1, 0.85];
+const ANCHOR_MONDAY = new Date(2024, 0, 1); // a Monday, so price weeks match the Monday-start ISO weeks the server groups by
+
+const roundHalf = (x) => Math.round(x * 2) / 2; // prices to the nearest $0.50
+
+function weekIndexOf(day) {
+  const noon = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12);
+  return Math.floor((noon - ANCHOR_MONDAY) / (7 * DAY_MS));
+}
+
+// Multiplier for a product in the week containing `day`.
+// priceOffset shifts each product's cycle so they don't all change price in the same weeks.
+function priceMultFor(demand, day) {
+  return PRICE_STEPS[(weekIndexOf(day) + (demand.priceOffset ?? 0)) % PRICE_STEPS.length];
 }
 
 // ---------- Fake customer data ----------
@@ -175,6 +202,8 @@ const SELLERS = [
           trend: [0.8, 1.8],
           events: [{ fromDaysAgo: 24, toDaysAgo: 18, multiplier: 1.6, label: 'gifting bump' }],
           variantShare: 0.35,
+          elasticity: -2.5, // expected best margin ≈ 40%
+          priceOffset: 0,
         },
       },
       {
@@ -196,6 +225,8 @@ const SELLERS = [
           weekday: [3, 2, 2, 2, 2, 3, 4],
           trend: [1.4, 0.6],
           events: [{ fromDaysAgo: 50, toDaysAgo: 44, multiplier: 1.8, label: 'promo week' }],
+          elasticity: -1.8, // expected best margin ≈ 55%
+          priceOffset: 2,
         },
       },
     ],
@@ -204,7 +235,7 @@ const SELLERS = [
         customerName: 'Sarah Tan',
         customerContact: '+65 9123 4567',
         platform: 'whatsapp',
-        items: [{ product: p.lavender._id, quantity: 2 }],
+        items: [{ product: p.lavender._id, quantity: 2, unitPrice: 18 }],
         price: 36,
         paymentStatus: 'paid',
         depositAmount: 36,
@@ -219,8 +250,8 @@ const SELLERS = [
         customerContact: '@marcus.lim',
         platform: 'instagram',
         items: [
-          { product: p.lavender._id, variantId: variantIdOf(p.lavender, 'With dried lavender topping'), variant: 'With dried lavender topping', quantity: 1 },
-          { product: p.vanilla._id, quantity: 2 },
+          { product: p.lavender._id, variantId: variantIdOf(p.lavender, 'With dried lavender topping'), variant: 'With dried lavender topping', quantity: 1, unitPrice: 21 },
+          { product: p.vanilla._id, quantity: 2, unitPrice: 18 },
         ],
         price: 57,
         paymentStatus: 'deposit',
@@ -236,7 +267,7 @@ const SELLERS = [
         customerName: 'Priya Nair',
         customerContact: '+65 8222 1111',
         platform: 'telegram',
-        items: [{ product: p.vanilla._id, quantity: 4 }],
+        items: [{ product: p.vanilla._id, quantity: 4, unitPrice: 18 }],
         price: 72,
         paymentStatus: 'unpaid',
         fulfilmentMethod: 'self-collect',
@@ -280,6 +311,8 @@ const SELLERS = [
           trend: [1.0, 1.1],
           events: [{ fromDaysAgo: 60, toDaysAgo: 54, multiplier: 0.5, label: 'shop break dip' }],
           variantShare: 0.25,
+          elasticity: -3.0, // expected best margin ≈ 33%
+          priceOffset: 4,
         },
       },
       {
@@ -300,6 +333,8 @@ const SELLERS = [
           weekday: [2, 1, 1, 1, 2, 4, 3],
           trend: [0.7, 1.5],
           events: [{ fromDaysAgo: 32, toDaysAgo: 26, multiplier: 2.2, label: 'viral spike' }],
+          elasticity: -2.2, // expected best margin ≈ 45%
+          priceOffset: 1,
         },
       },
     ],
@@ -309,8 +344,8 @@ const SELLERS = [
         customerContact: '+65 9000 1234',
         platform: 'whatsapp',
         items: [
-          { product: p.cookies._id, quantity: 2 },
-          { product: p.brownies._id, quantity: 1 },
+          { product: p.cookies._id, quantity: 2, unitPrice: 15 },
+          { product: p.brownies._id, quantity: 1, unitPrice: 20 },
         ],
         price: 50,
         paymentStatus: 'paid',
@@ -325,7 +360,7 @@ const SELLERS = [
         customerName: 'Daniel Koh',
         customerContact: '@daniel.koh',
         platform: 'tiktok',
-        items: [{ product: p.cookies._id, variantId: variantIdOf(p.cookies, 'Gluten-free'), variant: 'Gluten-free', quantity: 1 }],
+        items: [{ product: p.cookies._id, variantId: variantIdOf(p.cookies, 'Gluten-free'), variant: 'Gluten-free', quantity: 1, unitPrice: 18 }],
         price: 18,
         paymentStatus: 'deposit',
         depositAmount: 5,
@@ -340,7 +375,8 @@ const SELLERS = [
 
 // ---------- History generator ----------
 // Units demanded for one product on one day, from its demand assumption.
-function unitsFor(demand, daysAgo, weekday) {
+// priceRatio = this week's price ÷ the normal price (1 = normal). Dearer than normal → fewer sales.
+function unitsFor(demand, daysAgo, weekday, priceRatio = 1) {
   const t = (HISTORY_DAYS - daysAgo) / (HISTORY_DAYS - 1); // 0 = oldest day, 1 = yesterday
   const [startMult, endMult] = demand.trend;
   const trend = startMult + (endMult - startMult) * t;
@@ -349,8 +385,9 @@ function unitsFor(demand, daysAgo, weekday) {
     .filter((e) => daysAgo <= e.fromDaysAgo && daysAgo >= e.toDaysAgo)
     .reduce((m, e) => m * e.multiplier, 1);
 
+  const priceEffect = Math.pow(priceRatio, demand.elasticity ?? 0);
   const noise = 1 + (rng() * 2 - 1) * NOISE;
-  const raw = demand.weekday[weekday] * trend * event * noise;
+  const raw = demand.weekday[weekday] * trend * event * priceEffect * noise;
 
   // Stochastic rounding so low-demand days don't all collapse to 0 or 1
   const whole = Math.floor(raw);
@@ -362,7 +399,8 @@ function unitsFor(demand, daysAgo, weekday) {
 function buildHistoryOrders(sellerId, productDefs, productDocs, knownCustomers = []) {
   const orders = [];
   const stats = {};
-  productDefs.forEach((d) => (stats[d.name] = [0, 0, 0]));
+  const BLOCKS = Math.ceil(HISTORY_DAYS / 28);
+  productDefs.forEach((d) => (stats[d.name] = new Array(BLOCKS).fill(0)));
 
   // Repeat customers (known + generated), each with a different buying frequency
   const makeCustomer = createCustomerGenerator(knownCustomers);
@@ -379,7 +417,13 @@ function buildHistoryOrders(sellerId, productDefs, productDocs, knownCustomers =
 
     productDocs.forEach((doc, idx) => {
       const def = productDefs[idx];
-      let remaining = unitsFor(def.demand, daysAgo, weekday);
+
+      // This week's price for the product (variants move with it)
+      const mult = priceMultFor(def.demand, day);
+      const productPrice = roundHalf(doc.price * mult);
+      const priceRatio = productPrice / doc.price;
+
+      let remaining = unitsFor(def.demand, daysAgo, weekday, priceRatio);
       stats[def.name][block] += remaining;
 
       // Split the day's units into several orders of 1–3 units each
@@ -392,7 +436,7 @@ function buildHistoryOrders(sellerId, productDefs, productDocs, knownCustomers =
 
         const variant =
           doc.variants.length > 0 && chance(def.demand.variantShare ?? 0) ? pick(doc.variants) : null;
-        const unitPrice = variant && variant.price != null ? variant.price : doc.price;
+        const unitPrice = variant && variant.price != null ? roundHalf(variant.price * mult) : productPrice;
         const price = unitPrice * quantity;
 
         const dueAt = new Date(day);
@@ -400,10 +444,10 @@ function buildHistoryOrders(sellerId, productDefs, productDocs, knownCustomers =
         const createdAt = new Date(dueAt);
         createdAt.setHours(9, 0, 0, 0); // same day, earlier (only applies if the schema has timestamps)
 
-        const item = { product: doc._id, quantity };
+        const item = { product: doc._id, quantity, unitPrice }; // the pricing code reads items.unitPrice
         if (variant) {
-          item.variantId = variant._id;  // the ObjectId, which is what materialsNeeded and the forecast match on
-          item.variant = variant.name;   // keep the name too, for display
+          item.variantId = variant._id; // the ObjectId, which is what materialsNeeded and the forecast match on
+          item.variant = variant.name; // keep the name too, for display
         }
 
         const order = {
@@ -506,11 +550,12 @@ async function seed() {
     if (history.length < MIN_ORDERS_PER_SELLER) {
       console.warn(`  Warning: ${def.username} only got ${history.length} historical orders (< ${MIN_ORDERS_PER_SELLER})`);
     }
+
     // Save one at a time, oldest first, so each day's numbers run -01, -02, ... in order.
-// (Order.create([...]) saves the whole array in parallel, which scrambles the numbering.)
-for (const o of [...history, ...recent]) {
-  await Order.create(o);
-}
+    // (Order.create([...]) saves the whole array in parallel, which scrambles the numbering.)
+    for (const o of [...history, ...recent]) {
+      await Order.create(o);
+    }
 
     totalMaterials += materialDocs.length;
     totalProducts += productDocs.length;

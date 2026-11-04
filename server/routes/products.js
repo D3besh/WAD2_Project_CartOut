@@ -165,24 +165,37 @@ router.delete('/:id', handle(async (req, res) => {
 }));
 
 import mongoose from 'mongoose';
-import { computeDemandRatios, suggestPrice } from '../services/pricing.js';
+import { computeDemandRatios, suggestPrice, computeRecommendedMargins } from '../services/pricing.js';
 
 router.get('/price-suggestions', requireAuth, async (req, res) => {
-
   try {
-
-
     const sellerId = new mongoose.Types.ObjectId(req.session.userId);
-    const margin = Math.min(0.9, Math.max(0, Number(req.query.margin) || 0.4));
 
-    const [products, ratios] = await Promise.all([
+    // ?margin=auto  -> recommended margin per product/variant (falls back to 40%)
+    // ?margin=0.5   -> same manual margin for everything
+    const auto = req.query.margin === 'auto';
+    const manualMargin = auto ? 0.4 : Math.min(0.9, Math.max(0, Number(req.query.margin) || 0.4));
+
+    const [products, ratios, margins] = await Promise.all([
       Product.find({ seller: sellerId, archived: false }),
       computeDemandRatios(sellerId),
+      auto ? computeRecommendedMargins(sellerId, { defaultMargin: manualMargin }) : new Map(),
     ]);
 
     const suggestions = products.map(p => {
-      const ratioFor = (variantId) => ratios.get(`${p._id}:${variantId ?? 'base'}`) ?? 1;
-      const priceFor = (cost, ratio) => suggestPrice({ cost, targetMargin: margin, demandRatio: ratio });
+      const key = (variantId) => `${p._id}:${variantId ?? 'base'}`;
+      const ratioFor = (variantId) => ratios.get(key(variantId)) ?? 1;
+
+      // { margin, basis }: basis is 'manual', 'default' or 'history'
+      const marginFor = (variantId) =>
+        auto
+          ? (margins.get(key(variantId)) ?? { margin: manualMargin, basis: 'default' })
+          : { margin: manualMargin, basis: 'manual' };
+
+      const priceFor = (cost, ratio, m) =>
+        suggestPrice({ cost, targetMargin: m.margin, demandRatio: ratio });
+
+      const baseMargin = marginFor(null);
 
       return {
         productId: p.id,
@@ -190,17 +203,22 @@ router.get('/price-suggestions', requireAuth, async (req, res) => {
         cost: p.cost,
         currentPrice: p.price,
         demandRatio: ratioFor(null),
-        suggestedPrice: priceFor(p.cost, ratioFor(null)),
+        margin: baseMargin.margin,
+        marginBasis: baseMargin.basis,
+        suggestedPrice: priceFor(p.cost, ratioFor(null), baseMargin),
         variants: p.variants.map(v => {
           const cost = v.cost ?? p.cost;
           const demandRatio = ratioFor(v._id);
+          const m = marginFor(v._id);
           return {
             variantId: v.id,
             name: v.name,
             cost,
             currentPrice: v.price ?? p.price,
             demandRatio,
-            suggestedPrice: priceFor(cost, demandRatio),
+            margin: m.margin,
+            marginBasis: m.basis,
+            suggestedPrice: priceFor(cost, demandRatio, m),
           };
         }),
       };

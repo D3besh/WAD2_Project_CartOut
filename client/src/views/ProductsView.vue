@@ -73,7 +73,7 @@ async function loadSuggestions() {
 
   try {
     let response = await axios.get('/api/products/price-suggestions', {
-      params: { margin: margin.value / 100 },
+      params: { margin: autoMargin.value ? 'auto' : margin.value / 100 },
     });
     suggestions.value = response.data.suggestions;
     suggestionsError.value = '';
@@ -166,6 +166,8 @@ const productCards = computed(() => {
   return list;
 });
 
+const autoMargin = ref(false);
+
 // One row per product, plus one per variant. Follows the search box too.
 const suggestionRows = computed(() => {
   let rows = [];
@@ -183,6 +185,8 @@ const suggestionRows = computed(() => {
       current: s.currentPrice,
       suggested: s.suggestedPrice,
       demandRatio: s.demandRatio,
+      margin: s.margin,          // new
+      basis: s.marginBasis,      // new
     });
 
     for (let v of s.variants) {
@@ -195,6 +199,8 @@ const suggestionRows = computed(() => {
         current: v.currentPrice,
         suggested: v.suggestedPrice,
         demandRatio: v.demandRatio,
+        margin: v.margin,        // new
+        basis: v.marginBasis,    // new
       });
     }
   }
@@ -486,23 +492,19 @@ async function deleteProduct() {
     <!-- ===== What just happened (sticks under the navbar) ===== -->
     <ActionBanner :message="banner" @close="banner = null" />
 
-        <!-- ===== Price suggestions ===== -->
+    <!-- ===== Price suggestions ===== -->
     <section class="sk-card ps-section mb-3" data-testid="price-suggestions">
       <div class="ps-header">
         <h2 class="ps-title">Price suggestions</h2>
 
-        <label class="ps-margin" for="ps-margin">
+        <label class="ps-margin">
+          <input type="checkbox" v-model="autoMargin" @change="loadSuggestions" /> Auto margin
+        </label>
+
+        <label v-if="!autoMargin" class="ps-margin" for="ps-margin">
           Target margin (%)
-          <input
-            id="ps-margin"
-            v-model.number="margin"
-            type="number"
-            min="0"
-            max="90"
-            step="5"
-            class="form-control form-control-sm"
-            @change="loadSuggestions"
-          />
+          <input id="ps-margin" v-model.number="margin" type="number" min="0" max="90" step="5"
+            class="form-control form-control-sm" @change="loadSuggestions" />
         </label>
 
         <button type="button" class="btn btn-light btn-sm" @click="showSuggestions = !showSuggestions">
@@ -523,6 +525,7 @@ async function deleteProduct() {
                 <th class="text-end">Current</th>
                 <th class="text-end">Suggested</th>
                 <th>Change</th>
+                <th class="text-end">Margin</th>
                 <th></th>
               </tr>
             </thead>
@@ -534,7 +537,9 @@ async function deleteProduct() {
                 <td class="text-end">{{ row.cost !== null ? '$' + row.cost.toFixed(2) : '—' }}</td>
                 <td class="text-end">${{ row.current.toFixed(2) }}</td>
 
-                <td v-if="row.suggested === null" class="text-end ps-missing" colspan="2">Add a cost to get a suggestion</td>
+                <td v-if="row.suggested === null" class="text-end ps-missing" colspan="3">
+                  Add a cost to get a suggestion
+                </td>
                 <template v-else>
                   <td class="text-end"><strong>${{ row.suggested.toFixed(2) }}</strong></td>
                   <td :class="changeClass(row)">
@@ -542,10 +547,16 @@ async function deleteProduct() {
                     <span v-if="row.demandRatio > 1.05" title="Selling faster than usual"> ↑ demand</span>
                     <span v-else-if="row.demandRatio < 0.95" title="Selling slower than usual"> ↓ demand</span>
                   </td>
+                  <td class="text-end">
+                    {{ Math.round(row.margin * 100) }}%
+                    <small v-if="row.basis === 'history'"
+                      title="Estimated from your past sales and price changes">📈</small>
+                  </td>
                 </template>
 
                 <td class="text-end">
-                  <button type="button" class="btn btn-outline-primary btn-sm" @click="editFromSuggestion(row.productId)">Edit</button>
+                  <button type="button" class="btn btn-outline-primary btn-sm"
+                    @click="editFromSuggestion(row.productId)">Edit</button>
                 </td>
               </tr>
             </tbody>
@@ -557,23 +568,13 @@ async function deleteProduct() {
     <!-- ===== Search ===== -->
     <div class="sk-card inv-toolbar mb-3">
       <span class="inv-meta">{{ productCards.length }} product(s)</span>
-      <input
-        id="product-search"
-        v-model="search"
-        class="form-control inv-search"
-        placeholder="Search products"
-        aria-label="Search products"
-      />
+      <input id="product-search" v-model="search" class="form-control inv-search" placeholder="Search products"
+        aria-label="Search products" />
     </div>
 
     <!-- ===== Product cards (12 per page, 4 per row on a wide screen) ===== -->
     <TransitionGroup v-if="productCards.length > 0" name="list" tag="div" class="prod-grid inv-grid-top">
-      <ProductCard
-        v-for="item in pagedCards"
-        :key="item.product.id"
-        :product="item.product"
-        @edit="openEditForm"
-      >
+      <ProductCard v-for="item in pagedCards" :key="item.product.id" :product="item.product" @edit="openEditForm">
         <!-- This goes into the card's <slot> -->
         <div class="inv-capacity">
           <div class="inv-capacity__label">Can make now</div>
@@ -593,7 +594,8 @@ async function deleteProduct() {
             <!-- From the forecast -->
             <div v-if="row.tomorrow !== null" class="fc-tomorrow">
               <span>Tomorrow</span>
-              <span><strong>{{ itemsText(row.tomorrow.orders) }}</strong> ordered + ~{{ row.tomorrow.extra }} more</span>
+              <span><strong>{{ itemsText(row.tomorrow.orders) }}</strong> ordered + ~{{ row.tomorrow.extra }}
+                more</span>
             </div>
 
             <!-- Enough for tomorrow? If not, send them to the "What to buy" list -->
@@ -612,7 +614,8 @@ async function deleteProduct() {
     </TransitionGroup>
 
     <div v-else class="empty-state">
-      <template v-if="products.length === 0">No products yet. Add one and give it a recipe to see how many you can make.</template>
+      <template v-if="products.length === 0">No products yet. Add one and give it a recipe to see how many you can
+        make.</template>
       <template v-else>No products match.</template>
     </div>
 
@@ -639,15 +642,18 @@ async function deleteProduct() {
             <div class="row g-3">
               <div class="col-sm-4">
                 <label for="product-price" class="form-label">Price ($)</label>
-                <input id="product-price" v-model.number="form.price" type="number" min="0" step="0.5" class="form-control" />
+                <input id="product-price" v-model.number="form.price" type="number" min="0" step="0.5"
+                  class="form-control" />
               </div>
               <div class="col-sm-4">
                 <label for="product-cost" class="form-label">Cost to make ($)</label>
-                <input id="product-cost" v-model.number="form.cost" type="number" min="0" step="0.1" class="form-control" placeholder="e.g. 6.50" />
+                <input id="product-cost" v-model.number="form.cost" type="number" min="0" step="0.1"
+                  class="form-control" placeholder="e.g. 6.50" />
               </div>
               <div class="col-sm-4">
                 <label for="product-time" class="form-label">Time to make (min)</label>
-                <input id="product-time" v-model.number="form.makingTimeMins" type="number" min="0" class="form-control" placeholder="Optional" />
+                <input id="product-time" v-model.number="form.makingTimeMins" type="number" min="0" class="form-control"
+                  placeholder="Optional" />
               </div>
             </div>
 
@@ -664,9 +670,11 @@ async function deleteProduct() {
                 <option value="" disabled>Choose material…</option>
                 <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
               </select>
-              <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control" :aria-label="`Amount ${index + 1}`" />
+              <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control"
+                :aria-label="`Amount ${index + 1}`" />
               <span class="unit">{{ unitOf(line.material) }}</span>
-              <button type="button" class="btn btn-light inv-remove" aria-label="Remove material" @click="removeRecipeRow(index)">✕</button>
+              <button type="button" class="btn btn-light inv-remove" aria-label="Remove material"
+                @click="removeRecipeRow(index)">✕</button>
             </div>
             <button type="button" class="btn btn-outline-primary btn-sm" @click="addRecipeRow">+ Add material</button>
 
@@ -682,31 +690,18 @@ async function deleteProduct() {
               <div class="inv-variant__fields">
                 <div>
                   <label :for="`variant-name-${vIndex}`" class="form-label">Variant name</label>
-                  <input :id="`variant-name-${vIndex}`" v-model="variant.name" class="form-control" placeholder="e.g. Large" />
+                  <input :id="`variant-name-${vIndex}`" v-model="variant.name" class="form-control"
+                    placeholder="e.g. Large" />
                 </div>
                 <div>
                   <label :for="`variant-price-${vIndex}`" class="form-label">Price ($)</label>
-                  <input
-                    :id="`variant-price-${vIndex}`"
-                    v-model.number="variant.price"
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    class="form-control"
-                    :placeholder="`Same: ${form.price ?? 0}`"
-                  />
+                  <input :id="`variant-price-${vIndex}`" v-model.number="variant.price" type="number" min="0" step="0.5"
+                    class="form-control" :placeholder="`Same: ${form.price ?? 0}`" />
                 </div>
                 <div>
                   <label :for="`variant-cost-${vIndex}`" class="form-label">Cost ($)</label>
-                  <input
-                    :id="`variant-cost-${vIndex}`"
-                    v-model.number="variant.cost"
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    class="form-control"
-                    :placeholder="`Same: ${form.cost ?? '–'}`"
-                  />
+                  <input :id="`variant-cost-${vIndex}`" v-model.number="variant.cost" type="number" min="0" step="0.1"
+                    class="form-control" :placeholder="`Same: ${form.cost ?? '–'}`" />
                 </div>
                 <button type="button" class="btn btn-light btn-sm" @click="removeVariant(vIndex)">Remove</button>
               </div>
@@ -717,23 +712,22 @@ async function deleteProduct() {
                   <option value="" disabled>Choose material…</option>
                   <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
                 </select>
-                <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control" :aria-label="`Extra amount ${eIndex + 1}`" />
+                <input v-model.number="line.amountPerUnit" type="number" min="0" class="form-control"
+                  :aria-label="`Extra amount ${eIndex + 1}`" />
                 <span class="unit">{{ unitOf(line.material) }}</span>
-                <button type="button" class="btn btn-light inv-remove" aria-label="Remove extra material" @click="removeExtraRow(variant, eIndex)">✕</button>
+                <button type="button" class="btn btn-light inv-remove" aria-label="Remove extra material"
+                  @click="removeExtraRow(variant, eIndex)">✕</button>
               </div>
-              <button type="button" class="btn btn-outline-primary btn-sm" @click="addExtraRow(variant)">+ Add extra material</button>
+              <button type="button" class="btn btn-outline-primary btn-sm" @click="addExtraRow(variant)">+ Add extra
+                material</button>
             </div>
 
             <button type="button" class="btn btn-light btn-sm" @click="addVariant">+ Add variant</button>
           </div>
 
           <div class="modal-footer">
-            <button
-              v-if="editingId !== null"
-              type="button"
-              class="btn btn-outline-danger btn-sm me-auto"
-              @click="deleteProduct"
-            >
+            <button v-if="editingId !== null" type="button" class="btn btn-outline-danger btn-sm me-auto"
+              @click="deleteProduct">
               Delete
             </button>
             <button type="button" class="btn btn-light" @click="showForm = false">Cancel</button>
@@ -754,14 +748,23 @@ async function deleteProduct() {
   gap: 0.9rem;
   align-items: start;
 }
+
 @media (max-width: 1199.98px) {
-  .prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .prod-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
+
 @media (max-width: 767.98px) {
-  .prod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .prod-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
+
 @media (max-width: 479.98px) {
-  .prod-grid { grid-template-columns: 1fr; }
+  .prod-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* "✓ Enough for tomorrow" / "⚠ Short 3 for tomorrow  What to buy →" */
@@ -776,7 +779,19 @@ async function deleteProduct() {
   font-weight: 700;
   border-radius: var(--sk-radius-sm);
 }
-.fc-status.is-ok { color: var(--sk-ok); background: var(--sk-ok-soft); }
-.fc-status.is-short { color: var(--sk-warn); background: var(--sk-warn-soft); }
-.fc-status a { color: inherit; white-space: nowrap; }
+
+.fc-status.is-ok {
+  color: var(--sk-ok);
+  background: var(--sk-ok-soft);
+}
+
+.fc-status.is-short {
+  color: var(--sk-warn);
+  background: var(--sk-warn-soft);
+}
+
+.fc-status a {
+  color: inherit;
+  white-space: nowrap;
+}
 </style>
