@@ -67,6 +67,10 @@ TODO: list each test case and the user journey it covers.
 
 ## Use of AI
 
+Gen AI tools, namely ChatGPT and Claude, were used as supplementary resources during the development of this project. We used AI assistance where applicable when clarifying key technical concepts, reviewing code, critiquing our design, and some help with troubleshooting.
+
+All AI-generated suggestions were reviewed, adapted, and validated by our team before we incorporate them into our project. The team remains responsible for any final implementaion, testing, design decisions, and the final submitted deliverable.
+
 As required by the IS216 AI policy, these are the parts that relied on AI/LLM:
 
 - Initial project skeleton (folder structure, configuration files, empty route
