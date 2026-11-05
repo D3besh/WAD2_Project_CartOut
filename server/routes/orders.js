@@ -170,6 +170,9 @@ router.post('/', async (req, res, next) => {
 
 
     // Rules the schema can't express on its own
+    if (dueAt && new Date(dueAt) < new Date()) {
+      return res.status(400).json({ error: "Due date can't be in the past" });
+    }
     if (fulfilmentMethod === 'delivery' && !deliveryAddress?.trim()) {
       return res.status(400).json({ error: 'Delivery address is required for delivery orders' });
     }
