@@ -1,8 +1,11 @@
 <script setup>
 // Financial tracker: Unpaid → Deposit → Paid. Clickable, auto-saves.
-//   - Click Unpaid / Paid → saves straight away.
+// Payment only moves FORWARD (money going back is a Refund, not "Unpaid"):
+//   - Earlier steps can't be clicked.
 //   - Click Deposit → an amount box appears; saves ~0.7s after you stop typing
-//     (or on Enter / clicking away).
+//     (or on Enter / clicking away). While at Deposit, the amount can still be
+//     corrected (e.g. a typo).
+//   - Click Paid → asks "Mark as fully paid?" first, because it can't be undone.
 // Extra steps appear only if they really happened, in this order:
 //   Refunded (money given back), then Cancelled (order called off).
 // A refund always comes before a cancellation, never after.
@@ -25,6 +28,19 @@ const stages = [
 ];
 
 const selected = ref(null); // step clicked but not saved yet (only used for Deposit)
+const confirmingPaid = ref(false); // showing "Mark as fully paid?"
+const ORDER = { unpaid: 0, deposit: 1, paid: 2 };
+
+// Earlier steps are locked. The current step is locked too, except Deposit
+// (clicking it again lets you correct the amount).
+function isLocked(stage) {
+  if (props.disabled) return true;
+  const saved = ORDER[props.paymentStatus] ?? 0;
+  const step = ORDER[stage.value];
+  if (step < saved) return true;
+  if (step === saved && stage.value !== 'deposit') return true;
+  return false;
+}
 const depositInput = ref('');
 const localError = ref('');
 const inputEl = ref(null);
@@ -47,6 +63,7 @@ function stateOf(index) {
 // Reset the form whenever the saved order changes (or a save finishes / fails)
 function resetFromOrder() {
   selected.value = null;
+  confirmingPaid.value = false;
   localError.value = '';
   depositInput.value = props.depositAmount > 0 ? String(props.depositAmount) : '';
 }
@@ -59,9 +76,18 @@ watch(
 );
 
 async function pick(value) {
-  if (props.disabled) return;
+  const stage = stages.find((s) => s.value === value);
+  if (isLocked(stage)) return;
   clearTimeout(timer);
   localError.value = '';
+  confirmingPaid.value = false;
+
+  // Paid can't be undone, so ask first
+  if (value === 'paid') {
+    selected.value = null;
+    confirmingPaid.value = true;
+    return;
+  }
 
   if (value === 'deposit') {
     selected.value = 'deposit';
@@ -77,6 +103,11 @@ async function pick(value) {
 
   selected.value = null;
   emit('update', { paymentStatus: value, depositAmount: 0 });
+}
+
+function confirmPaid() {
+  confirmingPaid.value = false;
+  emit('update', { paymentStatus: 'paid', depositAmount: 0 });
 }
 
 function scheduleSave() {
@@ -112,10 +143,10 @@ onBeforeUnmount(() => clearTimeout(timer));
         :key="stage.value"
         type="button"
         class="step"
-        :class="[stateOf(i), { 'is-locked': disabled }]"
+        :class="[stateOf(i), { 'is-locked': disabled, 'is-past': !disabled && isLocked(stage) }]"
         :aria-pressed="shownStatus === stage.value"
         :data-testid="`pay-${stage.value}`"
-        :disabled="disabled"
+        :disabled="isLocked(stage)"
         @click="pick(stage.value)"
       >
         <span class="dot">
@@ -134,6 +165,18 @@ onBeforeUnmount(() => clearTimeout(timer));
       >
         <span class="dot">{{ outcome === 'refunded' ? '↩' : '✕' }}</span>
         <span class="label">{{ OUTCOME_LABELS[outcome] }}</span>
+      </div>
+    </div>
+
+    <!-- "Are you sure?" before marking as fully paid -->
+    <div v-if="confirmingPaid" class="pay-confirm" data-testid="pay-confirm" role="alertdialog" aria-live="polite">
+      <p class="mb-1 fw-semibold">Mark as fully paid (${{ Number(price).toFixed(2) }})?</p>
+      <p class="small text-muted mb-2">
+        This can't be undone. If money is returned later, use Refund.
+      </p>
+      <div class="d-flex justify-content-center gap-2">
+        <button type="button" class="btn btn-primary btn-sm" @click="confirmPaid">Yes, mark as paid</button>
+        <button type="button" class="btn btn-light btn-sm" @click="confirmingPaid = false">Not yet</button>
       </div>
     </div>
 
@@ -163,6 +206,21 @@ onBeforeUnmount(() => clearTimeout(timer));
 </template>
 
 <style scoped>
+/* steps already passed: can't go back, but they don't look faded */
+.step.is-past {
+  cursor: default;
+}
+
+/* "Are you sure?" box for Paid */
+.pay-confirm {
+  max-width: 340px;
+  margin: 1rem auto 0;
+  padding: 0.75rem 0.9rem;
+  text-align: center;
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-brand-soft);
+}
+
 .stage-tracker {
   display: flex;
   width: 100%;

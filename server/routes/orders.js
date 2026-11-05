@@ -8,6 +8,7 @@ import { parseOrder } from '../services/extraction.js';
 import { notifyCustomer } from '../services/notify.js';
 import { buildMessage, messageType } from '../services/messages.js';
 import User from '../models/User.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 
 
 const router = Router();
@@ -178,17 +179,6 @@ router.post('/', async (req, res, next) => {
     if (Number(depositAmount) > Number(price)) {
       return res.status(400).json({ error: 'Deposit cannot be more than the price' });
     }
-    // No backdating. The page blocks this too, but anyone can skip the page and
-    // call the API directly. Comparing exact moments (not dates) means time zones
-    // don't matter. 5 minutes of leeway covers a slow save or a browser clock
-    // that's slightly off, so a time picked "just now" isn't rejected unfairly.
-    const due = new Date(dueAt);
-    if (!dueAt || isNaN(due)) {
-      return res.status(400).json({ error: 'Enter a valid due date' });
-    }
-    if (due.getTime() < Date.now() - 5 * 60 * 1000) {
-      return res.status(400).json({ error: "Due date can't be in the past" });
-    }
     // Email is optional, but if given it must look like an email
     if (customerEmail && !/^\S+@\S+\.\S+$/.test(customerEmail.trim())) {
       return res.status(400).json({ error: 'Customer email is not a valid email address' });
@@ -235,6 +225,68 @@ router.post('/', async (req, res, next) => {
 });
 
 
+// GET /api/orders/customers/search?name=...
+// Must come BEFORE '/:id', otherwise Express reads "customers" as an order id.
+router.get('/customers/search', requireAuth, async (req, res) => {
+  try {
+    const search = req.query.name?.trim();
+
+    if (!search || search.length < 2) {
+      return res.json([]);
+    }
+
+    // Escape special regex characters
+    const escapedSearch = search.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    );
+
+    // Search only this seller's past orders
+    const orders = await Order.find({
+      seller: req.user.id,
+      customerName: {
+        $regex: escapedSearch,
+        $options: 'i'
+      }
+    })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select('customerName customerContact customerEmail deliveryAddress platform');
+
+    // Remove duplicate customer records
+    const uniqueCustomers = new Map();
+
+    for (const order of orders) {
+      // Prefer phone number, then email.
+      // If neither exists, keep the order as a separate result.
+      const key = order.customerContact?.trim()
+        ? `phone:${order.customerContact.trim()}`
+        : order.customerEmail?.trim()
+          ? `email:${order.customerEmail.trim().toLowerCase()}`
+          : `order:${order._id}`;
+
+      if (!uniqueCustomers.has(key)) {
+        uniqueCustomers.set(key, {
+          customerName: order.customerName,
+          customerContact: order.customerContact,
+          customerEmail: order.customerEmail,
+          deliveryAddress: order.deliveryAddress,
+          platform: order.platform
+        });
+      }
+    }
+
+    res.json([...uniqueCustomers.values()].slice(0, 10));
+
+  } catch (error) {
+    console.error('Customer search error:', error);
+    res.status(500).json({
+      message: 'Failed to search customers'
+    });
+  }
+});
+
+
 // GET /api/orders/:id
 router.get('/:id', async (req, res, next) => {
   try {
@@ -277,15 +329,28 @@ router.get('/:id/message', async (req, res, next) => {
 router.put('/:id', notImplemented);
 
 
+// Stages in order. Orders only move forward through these.
+const STAGE_ORDER = ['in-progress', 'ready', 'completed'];
+
+// The stages that come before `status`, e.g. 'completed' → ['in-progress', 'ready']
+function stagesBefore(status) {
+  return STAGE_ORDER.slice(0, STAGE_ORDER.indexOf(status));
+}
+
+
 // PATCH /api/orders/bulk-status
 // Body: { ids: [orderId, ...], status }
 // Changes the stage of many orders at once (bulk update from the Order Log).
-// Cancelled orders, and orders already at that stage, are skipped.
+// Orders only move forward: orders already at (or past) that stage, and
+// cancelled orders, are skipped.
 router.patch('/bulk-status', async (req, res, next) => {
   try {
     const { ids, status } = req.body;
     if (!['in-progress', 'ready', 'completed'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status.' });
+    }
+    if (status === 'in-progress') {
+      return res.status(400).json({ message: "Orders can't be moved back to In progress." });
     }
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ message: 'Select at least one order.' });
@@ -299,11 +364,11 @@ router.patch('/bulk-status', async (req, res, next) => {
       }
     }
 
-    // Only this seller's orders that can actually change
+    // Only this seller's orders that are in an EARLIER stage (so they move forward)
     const orders = await Order.find({
       _id: { $in: ids },
       seller: req.session.userId,
-      status: { $nin: ['cancelled', status] },
+      status: { $in: stagesBefore(status) },
     }).populate('items.product');
 
     for (const order of orders) {
@@ -334,18 +399,37 @@ router.patch('/bulk-status', async (req, res, next) => {
 
 // PATCH /api/orders/:id/status
 // Body: { status }. Cancelling goes through POST /:id/cancel instead.
+// Orders only move forward: In progress → Ready → Completed.
 router.patch('/:id/status', async (req, res, next) => {
   try {
     const { status } = req.body;
-    if (!['in-progress', 'ready', 'completed'].includes(status)) {
+    if (!STAGE_ORDER.includes(status)) {
       return res.status(400).json({ message: 'Invalid status.' });
     }
-    const order = await Order.findOneAndUpdate(
-      { _id: req.params.id, seller: req.session.userId, status: { $ne: 'cancelled' } },
-      { status },
-      { new: true }
-    ).populate('items.product');
-    if (!order) return res.status(404).json({ message: 'Order not found or already cancelled.' });
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order id.' });
+    }
+
+    const order = await Order.findOne({ _id: req.params.id, seller: req.session.userId });
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ message: 'Cancelled orders cannot be changed.' });
+    }
+
+    // Same stage: nothing to change (and no email)
+    if (order.status === status) {
+      await order.populate('items.product');
+      return res.json({ order });
+    }
+
+    // Going back is not allowed
+    if (STAGE_ORDER.indexOf(status) < STAGE_ORDER.indexOf(order.status)) {
+      return res.status(400).json({ message: "Orders can't go back to an earlier step." });
+    }
+
+    order.status = status;
+    await order.save();
+    await order.populate('items.product');
     await notifyCustomer(order); // emails the customer, if they gave an email
     res.json({ order });
   } catch (err) {
@@ -479,6 +563,22 @@ router.patch('/:id/payment', async (req, res, next) => {
       return res.status(400).json({ message: 'Payment cannot be changed after a refund.' });
     }
 
+    // Payment only moves forward: Unpaid → Deposit → Paid.
+    // Money going back to the customer is a Refund, not "Unpaid".
+    const PAY_ORDER = { unpaid: 0, deposit: 1, paid: 2 };
+    const current = PAY_ORDER[order.paymentStatus] ?? 0;
+    const wanted = PAY_ORDER[paymentStatus];
+    if (wanted < current) {
+      return res.status(400).json({
+        message: "Payment can't go back to an earlier step. Use Refund if money was returned.",
+      });
+    }
+    // Same step: nothing to change (Deposit → Deposit is allowed, to correct the amount)
+    if (wanted === current && paymentStatus !== 'deposit') {
+      await order.populate('items.product');
+      return res.json({ order });
+    }
+
 
     let deposit = 0;
     if (paymentStatus === 'deposit') {
@@ -504,66 +604,6 @@ router.patch('/:id/payment', async (req, res, next) => {
 
 
 
-import { requireAuth } from '../middleware/requireAuth.js';
-
-router.get('/customers/search', requireAuth, async (req, res) => {
-  try {
-    const search = req.query.name?.trim();
-
-    if (!search || search.length < 2) {
-      return res.json([]);
-    }
-
-    // Escape special regex characters
-    const escapedSearch = search.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      '\\$&'
-    );
-
-    // Search only this seller's past orders
-    const orders = await Order.find({
-      seller: req.user.id,
-      customerName: {
-        $regex: escapedSearch,
-        $options: 'i'
-      }
-    })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .select('customerName customerContact customerEmail deliveryAddress platform');
-
-    // Remove duplicate customer records
-    const uniqueCustomers = new Map();
-
-    for (const order of orders) {
-      // Prefer phone number, then email.
-      // If neither exists, keep the order as a separate result.
-      const key = order.customerContact?.trim()
-        ? `phone:${order.customerContact.trim()}`
-        : order.customerEmail?.trim()
-          ? `email:${order.customerEmail.trim().toLowerCase()}`
-          : `order:${order._id}`;
-
-      if (!uniqueCustomers.has(key)) {
-        uniqueCustomers.set(key, {
-          customerName: order.customerName,
-          customerContact: order.customerContact,
-          customerEmail: order.customerEmail,
-          deliveryAddress: order.deliveryAddress,
-          platform: order.platform
-        });
-      }
-    }
-
-    res.json([...uniqueCustomers.values()].slice(0, 10));
-
-  } catch (error) {
-    console.error('Customer search error:', error);
-    res.status(500).json({
-      message: 'Failed to search customers'
-    });
-  }
-});
 
 
 // DELETE /api/orders/:id

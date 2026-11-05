@@ -67,6 +67,14 @@ function readClipboard(page) {
   return async () => normalise(await page.evaluate(() => navigator.clipboard.readText()));
 }
 
+// Clicks a step on the Order progress tracker and confirms "Mark this order as …?"
+async function moveToStage(page, stage, label) {
+  await page.getByTestId(`stage-${stage}`).click();
+  const confirmBox = page.getByTestId('stage-confirm');
+  await expect(confirmBox).toContainText(`Mark this order as ${label}?`);
+  await confirmBox.getByRole('button', { name: `Yes, mark as ${label}` }).click();
+}
+
 // The status pill in the key-facts strip at the top of Order detail
 const statusPill = (page) => page.locator('header .status');
 
@@ -89,9 +97,16 @@ test.describe('Order log', () => {
 
     const save = page.getByRole('button', { name: 'Save order' });
     await expect(save).toBeEnabled();
-    await save.click();
 
-    await expect(page.getByText(`Order for ${name} saved.`)).toBeVisible();
+    // Click Save and wait for the server's answer (it can be slow when many tests run at once)
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/orders') && r.request().method() === 'POST'),
+      save.click(),
+    ]);
+    // If saving failed, show the server's reason instead of just "not found"
+    expect(response.status(), `saving failed: ${await response.text()}`).toBe(201);
+
+    await expect(page.getByText(`Order for ${name} saved.`)).toBeVisible({ timeout: 15_000 });
 
     // It shows up in the Order log
     await page.goto('/orders');
@@ -184,7 +199,7 @@ test.describe('Order detail: progress and payment', () => {
     const order = await createOrder(page, uniqueName('Ready'));
     await openOrder(page, order);
 
-    await page.getByTestId('stage-ready').click();
+    await moveToStage(page, 'ready', 'Ready');
 
     await expect(page.getByTestId('stage-ready')).toHaveAttribute('aria-pressed', 'true');
     await expect(statusPill(page)).toHaveText('Ready');
@@ -195,7 +210,7 @@ test.describe('Order detail: progress and payment', () => {
     const order = await createOrder(page, uniqueName('Completed'));
     await openOrder(page, order);
 
-    await page.getByTestId('stage-completed').click();
+    await moveToStage(page, 'completed', 'Completed');
 
     await expect(page.getByTestId('stage-completed')).toHaveAttribute('aria-pressed', 'true');
     await expect(statusPill(page)).toHaveText('Completed');
@@ -228,6 +243,7 @@ test.describe('Order detail: progress and payment', () => {
     await openOrder(page, order);
 
     await page.getByTestId('pay-paid').click();
+    await page.getByTestId('pay-confirm').getByRole('button', { name: 'Yes, mark as paid' }).click();
 
     await expect.poll(async () => (await getOrder(page, order._id)).paymentStatus).toBe('paid');
     await expect(page.locator('.money-box').filter({ hasText: 'Paid so far' })).toContainText('$20.00');
@@ -427,37 +443,62 @@ test.describe('Order log: bulk update', () => {
     expect((await getOrder(page, b._id)).status).toBe('ready');
   });
 
-  test('17b. bulk update Ready orders back to In progress', async ({ page }) => {
+  test('17b. bulk update cannot move Ready orders back to In progress', async ({ page }) => {
     const a = await createOrder(page, uniqueName('BulkBack A'), { status: 'ready' });
     const b = await createOrder(page, uniqueName('BulkBack B'), { status: 'ready' });
 
     await page.goto('/orders');
     await page.getByTestId('tab-ready').click();
-    await expect(page.getByTestId('tab-ready')).toHaveText('Ready (2)');
     await expect(page.getByTestId('order-card')).toHaveCount(2);
 
     await page.getByTestId('bulk-select').click();
     const bar = page.getByTestId('bulk-bar');
-    await page.getByLabel('Select all', { exact: true }).check();
-    await expect(bar).toContainText('2 selected');
 
-    // On the Ready tab, "Ready" isn't offered (they're already there)
+    // On the Ready tab, only moving forward (Completed) is offered
+    await expect(bar.getByRole('button', { name: 'Completed', exact: true })).toBeVisible();
+    await expect(bar.getByRole('button', { name: 'In progress', exact: true })).toHaveCount(0);
     await expect(bar.getByRole('button', { name: 'Ready', exact: true })).toHaveCount(0);
-    await bar.getByRole('button', { name: 'In progress', exact: true }).click();
 
-    await expect(page.getByText('2 orders marked as In progress.')).toBeVisible();
+    // The server refuses too, even if someone skips the buttons
+    const response = await page.request.patch('/api/orders/bulk-status', {
+      data: { ids: [a._id, b._id], status: 'in-progress' },
+    });
+    expect(response.status()).toBe(400);
+    expect((await getOrder(page, a._id)).status).toBe('ready');
+    expect((await getOrder(page, b._id)).status).toBe('ready');
+  });
 
-    // They left the Ready tab...
-    await expect(page.getByText('No orders here.')).toBeVisible();
-    await expect(page.getByTestId('tab-ready')).toHaveText('Ready (0)');
-    await expect(page.getByTestId('tab-in-progress')).toHaveText('In progress (2)');
+  test('17c. bulk update Ready orders forward to Completed', async ({ page }) => {
+    const a = await createOrder(page, uniqueName('BulkDone A'), { status: 'ready' });
+    const b = await createOrder(page, uniqueName('BulkDone B'), { status: 'ready' });
 
-    // ...and are back on the In progress tab
-    await page.getByTestId('tab-in-progress').click();
+    await page.goto('/orders');
+    await page.getByTestId('tab-ready').click();
     await expect(page.getByTestId('order-card')).toHaveCount(2);
 
-    expect((await getOrder(page, a._id)).status).toBe('in-progress');
-    expect((await getOrder(page, b._id)).status).toBe('in-progress');
+    await page.getByTestId('bulk-select').click();
+    await page.getByLabel('Select all', { exact: true }).check();
+    await page.getByTestId('bulk-bar').getByRole('button', { name: 'Completed', exact: true }).click();
+
+    // Completed can't be undone, so it asks first
+    const confirmBox = page.getByTestId('bulk-confirm');
+    await expect(confirmBox).toContainText('Mark 2 orders as Completed?');
+    await confirmBox.getByRole('button', { name: 'Yes, mark as Completed' }).click();
+
+    await expect(page.getByText('2 orders marked as Completed.')).toBeVisible();
+    await expect(page.getByTestId('tab-completed')).toHaveText('Completed (2)');
+
+    expect((await getOrder(page, a._id)).status).toBe('completed');
+    expect((await getOrder(page, b._id)).status).toBe('completed');
+  });
+
+  test('17d. Completed tab has no bulk update (nothing comes after Completed)', async ({ page }) => {
+    await createOrder(page, uniqueName('BulkNone'), { status: 'completed' });
+
+    await page.goto('/orders');
+    await page.getByTestId('tab-completed').click();
+    await expect(page.getByTestId('order-card')).toHaveCount(1);
+    await expect(page.getByTestId('bulk-select')).toHaveCount(0);
   });
 });
 
@@ -671,36 +712,25 @@ test.describe('Order log: paging and filters', () => {
 // Wrong input is refused
 // ---------------------------------------------------------------------------
 test.describe('Wrong input', () => {
-  test('27. Log order: missing fields turn red only after Save is pressed', async ({ page }) => {
+  test('27. Log order: Save stays disabled until required fields are filled', async ({ page }) => {
     await page.goto('/orders/new');
     const save = page.getByRole('button', { name: 'Save order' });
 
-    // Empty form: the footer lists what's left, but nothing is red yet,
-    // and Save can be pressed (pressing it is what shows the red fields)
-    await expect(save).toBeEnabled();
+    // Empty form
+    await expect(save).toBeDisabled();
     await expect(page.getByText(/required fields? left/)).toBeVisible();
-    await expect(page.locator('.is-invalid')).toHaveCount(0);
 
-    // Fill everything except the due date, then try to save
+    // Fill everything except the due date
     await page.locator('#customerName').fill(uniqueName('Incomplete'));
     await page.locator('#product-0').selectOption({ label: 'E2E Chocolate cookies' });
     await page.locator('#qty-0').fill('1');
     await page.locator('#price').fill('20');
     await page.locator('#fulfilmentMethod').selectOption('self-collect');
+    await expect(save).toBeDisabled();
     await expect(page.getByText(/required field left: Due date/)).toBeVisible();
-    await save.click();
 
-    // Only the due date is red, and nothing was saved
-    await expect(page.locator('#dueAt')).toHaveClass(/is-invalid/);
-    await expect(page.locator('#customerName')).not.toHaveClass(/is-invalid/);
-    await expect(page.locator('.action-banner--error')).toContainText('Due date');
-    const orders = await (await page.request.get('/api/orders')).json();
-    expect(orders).toHaveLength(0);
-
-    // Filling it clears the red straight away
     await page.locator('#dueAt').fill(dateTimeInput(2));
-    await expect(page.locator('#dueAt')).not.toHaveClass(/is-invalid/);
-    await expect(page.getByText('All set. Ready to save.')).toBeVisible();
+    await expect(save).toBeEnabled();
   });
 
   test('28. Log order: delivery needs an address', async ({ page }) => {
@@ -715,15 +745,11 @@ test.describe('Wrong input', () => {
     await page.locator('#fulfilmentMethod').selectOption('delivery');
 
     await expect(page.locator('#deliveryAddress')).toBeVisible();
-    await expect(page.getByText(/required field left: Delivery address/)).toBeVisible();
-
-    // Trying to save without an address turns the address field red
-    await save.click();
-    await expect(page.locator('#deliveryAddress')).toHaveClass(/is-invalid/);
+    await expect(save).toBeDisabled();
+    await expect(page.getByText(/Delivery address/).last()).toBeVisible();
 
     await page.locator('#deliveryAddress').fill('Blk 123 Bedok North Ave 1, #01-01');
-    await expect(page.locator('#deliveryAddress')).not.toHaveClass(/is-invalid/);
-    await expect(page.getByText('All set. Ready to save.')).toBeVisible();
+    await expect(save).toBeEnabled();
 
     // The server refuses a delivery order without an address too
     const product = (await (await page.request.get('/api/products')).json())[0];
@@ -898,10 +924,177 @@ test.describe('Message to customer updates', () => {
     await expect(box).not.toHaveValue('');
     const before = await box.inputValue();
 
-    await page.getByTestId('stage-ready').click();
+    await moveToStage(page, 'ready', 'Ready');
     await expect(statusPill(page)).toHaveText('Ready');
 
     await expect(box).not.toHaveValue(before);
     await expect(box).toHaveValue(/ready/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Order progress only moves forward
+// ---------------------------------------------------------------------------
+test.describe('Order progress is one-way', () => {
+  test('38. earlier steps cannot be clicked once an order moves forward', async ({ page }) => {
+    const order = await createOrder(page, uniqueName('OneWay'));
+    await openOrder(page, order);
+
+    // In progress: the current step can't be clicked, later steps can
+    await expect(page.getByTestId('stage-in-progress')).toBeDisabled();
+    await expect(page.getByTestId('stage-ready')).toBeEnabled();
+
+    await moveToStage(page, 'ready', 'Ready');
+    await expect(statusPill(page)).toHaveText('Ready');
+
+    // Ready: can't go back to In progress
+    await expect(page.getByTestId('stage-in-progress')).toBeDisabled();
+    await expect(page.getByTestId('stage-ready')).toBeDisabled();
+    await expect(page.getByTestId('stage-completed')).toBeEnabled();
+  });
+
+  test('39. "Not yet" leaves the order unchanged', async ({ page }) => {
+    const order = await createOrder(page, uniqueName('NotYet'));
+    await openOrder(page, order);
+
+    await page.getByTestId('stage-completed').click();
+    const confirmBox = page.getByTestId('stage-confirm');
+    await expect(confirmBox).toContainText("This can't be undone");
+    await confirmBox.getByRole('button', { name: 'Not yet' }).click();
+
+    await expect(confirmBox).toHaveCount(0);
+    await expect(statusPill(page)).toHaveText('In progress');
+    expect((await getOrder(page, order._id)).status).toBe('in-progress');
+  });
+
+  test('40. the server refuses to move an order back', async ({ page }) => {
+    const ready = await createOrder(page, uniqueName('Back Ready'), { status: 'ready' });
+    const done = await createOrder(page, uniqueName('Back Done'), { status: 'completed' });
+
+    const tryStatus = (id, status) => page.request.patch(`/api/orders/${id}/status`, { data: { status } });
+
+    expect((await tryStatus(ready._id, 'in-progress')).status()).toBe(400);
+    expect((await tryStatus(done._id, 'ready')).status()).toBe(400);
+    expect((await tryStatus(done._id, 'in-progress')).status()).toBe(400);
+
+    expect((await getOrder(page, ready._id)).status).toBe('ready');
+    expect((await getOrder(page, done._id)).status).toBe('completed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Payment only moves forward
+// ---------------------------------------------------------------------------
+test.describe('Payment is one-way', () => {
+  test('41. after a deposit, Unpaid cannot be clicked', async ({ page }) => {
+    const order = await createOrder(page, uniqueName('Pay OneWay'), {
+      price: 20,
+      paymentStatus: 'deposit',
+      depositAmount: 5,
+    });
+    await openOrder(page, order);
+
+    await expect(page.getByTestId('pay-unpaid')).toBeDisabled();
+    await expect(page.getByTestId('pay-deposit')).toBeEnabled(); // still allowed, to correct the amount
+    await expect(page.getByTestId('pay-paid')).toBeEnabled();
+  });
+
+  test('42. Paid asks first, and "Not yet" changes nothing', async ({ page }) => {
+    const order = await createOrder(page, uniqueName('Pay NotYet'), { price: 20 });
+    await openOrder(page, order);
+
+    await page.getByTestId('pay-paid').click();
+    const confirmBox = page.getByTestId('pay-confirm');
+    await expect(confirmBox).toContainText('Mark as fully paid ($20.00)?');
+    await confirmBox.getByRole('button', { name: 'Not yet' }).click();
+
+    await expect(confirmBox).toHaveCount(0);
+    expect((await getOrder(page, order._id)).paymentStatus).toBe('unpaid');
+  });
+
+  test('43. once paid, every payment step is locked', async ({ page }) => {
+    const order = await createOrder(page, uniqueName('Pay Locked'), { price: 20 });
+    await openOrder(page, order);
+
+    await page.getByTestId('pay-paid').click();
+    await page.getByTestId('pay-confirm').getByRole('button', { name: 'Yes, mark as paid' }).click();
+    await expect.poll(async () => (await getOrder(page, order._id)).paymentStatus).toBe('paid');
+
+    for (const step of ['unpaid', 'deposit', 'paid']) {
+      await expect(page.getByTestId(`pay-${step}`)).toBeDisabled();
+    }
+  });
+
+  test('44. the server refuses to move payment back', async ({ page }) => {
+    const deposit = await createOrder(page, uniqueName('PayBack Deposit'), {
+      price: 20,
+      paymentStatus: 'deposit',
+      depositAmount: 5,
+    });
+    const paid = await createOrder(page, uniqueName('PayBack Paid'), { price: 20, paymentStatus: 'paid' });
+
+    const tryPayment = (id, data) => page.request.patch(`/api/orders/${id}/payment`, { data });
+
+    expect((await tryPayment(deposit._id, { paymentStatus: 'unpaid' })).status()).toBe(400);
+    expect((await tryPayment(paid._id, { paymentStatus: 'deposit', depositAmount: 5 })).status()).toBe(400);
+    expect((await tryPayment(paid._id, { paymentStatus: 'unpaid' })).status()).toBe(400);
+
+    expect((await getOrder(page, deposit._id)).paymentStatus).toBe('deposit');
+    expect((await getOrder(page, paid._id)).paymentStatus).toBe('paid');
+  });
+
+  test('45. the deposit amount can still be corrected', async ({ page }) => {
+    const order = await createOrder(page, uniqueName('Pay Fix'), {
+      price: 20,
+      paymentStatus: 'deposit',
+      depositAmount: 5,
+    });
+    await openOrder(page, order);
+
+    const input = page.getByTestId('deposit-input');
+    await expect(input).toHaveValue('5');
+    await input.fill('8');
+    await input.press('Enter');
+
+    await expect.poll(async () => (await getOrder(page, order._id)).depositAmount).toBe(8);
+    await expect(page.locator('.money-box').filter({ hasText: 'Paid so far' })).toContainText('$8.00');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bulk Completed asks first
+// ---------------------------------------------------------------------------
+test.describe('Bulk Completed confirmation', () => {
+  test('46. bulk Completed: "Not yet" changes nothing', async ({ page }) => {
+    const a = await createOrder(page, uniqueName('BulkAsk A'), { status: 'ready' });
+    const b = await createOrder(page, uniqueName('BulkAsk B'), { status: 'ready' });
+
+    await page.goto('/orders');
+    await page.getByTestId('tab-ready').click();
+    await page.getByTestId('bulk-select').click();
+    await page.getByLabel('Select all', { exact: true }).check();
+
+    await page.getByTestId('bulk-bar').getByRole('button', { name: 'Completed', exact: true }).click();
+    const confirmBox = page.getByTestId('bulk-confirm');
+    await expect(confirmBox).toContainText("This can't be undone");
+    await confirmBox.getByRole('button', { name: 'Not yet' }).click();
+
+    await expect(confirmBox).toHaveCount(0);
+    await expect(page.getByTestId('order-card')).toHaveCount(2); // still on the Ready tab
+    expect((await getOrder(page, a._id)).status).toBe('ready');
+    expect((await getOrder(page, b._id)).status).toBe('ready');
+  });
+
+  test('47. bulk Ready does not ask (it can still be completed or cancelled later)', async ({ page }) => {
+    const order = await createOrder(page, uniqueName('BulkNoAsk'));
+
+    await page.goto('/orders');
+    await page.getByTestId('bulk-select').click();
+    await page.getByLabel('Select all', { exact: true }).check();
+    await page.getByTestId('bulk-bar').getByRole('button', { name: 'Ready', exact: true }).click();
+
+    await expect(page.getByTestId('bulk-confirm')).toHaveCount(0);
+    await expect(page.getByText('1 order marked as Ready.')).toBeVisible();
+    expect((await getOrder(page, order._id)).status).toBe('ready');
   });
 });

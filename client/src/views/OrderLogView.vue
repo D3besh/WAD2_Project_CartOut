@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import OrderCard from '../components/OrderCard.vue';
-import FloatingAddButton from '../components/FloatingAddButton.vue';
+import BacktoTop from '../components/BacktoTop.vue';
 import Pager from '../components/Pager.vue';
 import MaterialsNeededCard from '../components/MaterialsNeededCard.vue';
 
@@ -46,11 +46,15 @@ const bulkError = ref('');
 const materials = ref([]);      // for the "Materials needed" card
 
 
+// Stages orders can be moved TO in a bulk update.
+// Orders only move forward, so nothing can be moved back to In progress.
 const STAGES = [
-  { value: 'in-progress', label: 'In progress' },
-  { value: 'ready', label: 'Ready' },
-  { value: 'completed', label: 'Completed' },
+  { value: 'ready', label: 'Ready', order: 1 },
+  { value: 'completed', label: 'Completed', order: 2 },
 ];
+
+// Position of each tab's stage (the Refunded and Cancelled tabs hold mixed stages)
+const TAB_ORDER = { 'in-progress': 0, ready: 1, completed: 2 };
 
 
 async function fetchOrders() {
@@ -184,15 +188,21 @@ function clearFilters() {
 // Cancelled orders can't change stage, so there is nothing to bulk update there
 // (While searching, cancelled orders may be in the results; the server skips them.)
 const canSelect = computed(
-  () => (isSearching.value || statusFilter.value !== 'cancelled') && visibleOrders.value.length > 0
+  () =>
+    (isSearching.value || statusFilter.value !== 'cancelled') &&
+    stageButtons.value.length > 0 &&
+    visibleOrders.value.length > 0
 );
 
 
 // Stage buttons to show: hide the stage the orders are already in
 // (While searching, the results can be in any stage, so show all three.)
 const stageButtons = computed(() => {
-  if (isSearching.value) return STAGES;
-  return STAGES.filter((s) => s.value !== statusFilter.value);
+  // Search results and the Refunded tab can be in any stage: the server skips
+  // any order that would have to go backwards.
+  if (isSearching.value || TAB_ORDER[statusFilter.value] === undefined) return STAGES;
+  // Only stages AFTER this tab's stage, e.g. Ready tab → Completed only
+  return STAGES.filter((s) => s.order > TAB_ORDER[statusFilter.value]);
 });
 
 
@@ -229,7 +239,24 @@ const selectedOrders = computed(() =>
 );
 
 
+// Bulk "Completed" can't be undone, so it asks first
+const confirmingCompleted = ref(false);
+
+function chooseStage(stage) {
+  if (stage.value === 'completed') {
+    confirmingCompleted.value = true; // show "Mark N orders as Completed?"
+    return;
+  }
+  bulkUpdate(stage.value, stage.label);
+}
+
+function confirmCompleted() {
+  confirmingCompleted.value = false;
+  bulkUpdate('completed', 'Completed');
+}
+
 function stopSelecting() {
+  confirmingCompleted.value = false;
   selecting.value = false;
   selectedIds.value = [];
 }
@@ -266,7 +293,7 @@ async function bulkUpdate(newStatus, label) {
     const { updated, skipped, emailed } = response.data;
     let text = updated + (updated === 1 ? ' order' : ' orders') + ' marked as ' + label + '.';
     if (emailed > 0) text += ' ' + emailed + (emailed === 1 ? ' customer' : ' customers') + ' will be emailed.';
-    if (skipped > 0) text += ' ' + skipped + ' skipped (already ' + label + ' or cancelled).';
+    if (skipped > 0) text += ' ' + skipped + ' skipped (already ' + label + ' or later, or cancelled).';
     bulkMessage.value = text;
 
 
@@ -336,15 +363,22 @@ watch(totalPages, (n) => {
         </button>
       </div>
 
-      <button
-        v-if="canSelect && !selecting"
-        type="button"
-        class="btn btn-outline-primary btn-sm ms-auto"
-        data-testid="bulk-select"
-        @click="startSelecting"
-      >
-        Select orders
-      </button>
+      <!-- Right side: Select orders + New order (same button as on Home) -->
+      <div class="d-flex align-items-center gap-2 ms-auto">
+        <button
+          v-if="canSelect && !selecting"
+          type="button"
+          class="btn btn-outline-primary"
+          data-testid="bulk-select"
+          @click="startSelecting"
+        >
+          Select orders
+        </button>
+
+        <RouterLink to="/orders/new" class="btn btn-primary text-nowrap" data-testid="new-order">
+          + New Order
+        </RouterLink>
+      </div>
     </header>
 
 
@@ -442,7 +476,7 @@ watch(totalPages, (n) => {
           type="button"
           class="btn btn-primary btn-sm"
           :disabled="selectedIds.length === 0 || bulkSaving"
-          @click="bulkUpdate(stage.value, stage.label)"
+          @click="chooseStage(stage)"
         >
           {{ stage.label }}
         </button>
@@ -451,6 +485,22 @@ watch(totalPages, (n) => {
         </button>
       </div>
 
+
+      <!-- "Are you sure?" before marking orders as Completed -->
+      <div v-if="confirmingCompleted" class="bulk-confirm w-100" data-testid="bulk-confirm" role="alertdialog" aria-live="polite">
+        <p class="mb-1 fw-semibold">
+          Mark {{ selectedIds.length }} {{ selectedIds.length === 1 ? 'order' : 'orders' }} as Completed?
+        </p>
+        <p class="small text-muted mb-2">
+          This can't be undone. Completed orders can't be cancelled or refunded.
+        </p>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-primary btn-sm" :disabled="bulkSaving" @click="confirmCompleted">
+            Yes, mark as Completed
+          </button>
+          <button type="button" class="btn btn-light btn-sm" @click="confirmingCompleted = false">Not yet</button>
+        </div>
+      </div>
 
       <p v-if="bulkSaving" class="small text-muted mb-0 w-100">Updating orders...</p>
       <p v-if="bulkError" class="small text-danger mb-0 w-100">{{ bulkError }}</p>
@@ -506,7 +556,8 @@ watch(totalPages, (n) => {
     </div>
 
 
-    <FloatingAddButton v-if="!selecting" />
+    <!-- Round "↑" button, appears after scrolling down -->
+    <BacktoTop />
   </div>
 </template>
 
@@ -554,6 +605,13 @@ watch(totalPages, (n) => {
   font-size: 0.8rem;
   color: var(--sk-muted);
   background: var(--sk-bg);
+}
+
+/* ---- Bulk "Are you sure?" box ---- */
+.bulk-confirm {
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-brand-soft);
 }
 
 /* ---- Bulk action bar ---- */

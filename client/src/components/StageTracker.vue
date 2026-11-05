@@ -1,12 +1,17 @@
 <script setup>
-// The In progress → Ready → Completed tracker.
-// Used as a filter in the Order Log and as a status control in Order Detail.
+// The In progress → Ready → Completed tracker on Order Detail.
+// Orders only move FORWARD: earlier steps can't be clicked.
+// Clicking a later step asks "Are you sure?" first, then emits the new stage.
 // Pass :disabled="true" to lock it (e.g. cancelled orders).
+import { ref, computed, watch } from 'vue';
+
 const props = defineProps({
   modelValue: { type: String, default: 'in-progress' },
   disabled: { type: Boolean, default: false },
 });
-defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue']);
+
+const pending = ref(null); // the step clicked but not confirmed yet
 
 
 const stages = [
@@ -16,8 +21,33 @@ const stages = [
 ];
 
 
+const currentIndex = computed(() => stages.findIndex((s) => s.value === props.modelValue));
+
+// The current step and the ones before it can't be clicked (no going back)
+function isLocked(index) {
+  return props.disabled || index <= currentIndex.value;
+}
+
+function pick(stage, index) {
+  if (isLocked(index)) return;
+  pending.value = stage;
+}
+
+function confirm() {
+  emit('update:modelValue', pending.value.value);
+  pending.value = null;
+}
+
+// If the order changes (saved, or cancelled), close the question
+watch(
+  () => [props.modelValue, props.disabled],
+  () => {
+    pending.value = null;
+  }
+);
+
 function stateOf(index) {
-  const current = stages.findIndex((s) => s.value === props.modelValue);
+  const current = currentIndex.value;
   const last = stages.length - 1;
 
 
@@ -30,17 +60,18 @@ function stateOf(index) {
 
 
 <template>
+  <div>
   <div class="stage-tracker" role="group" aria-label="Order stage">
     <button
       v-for="(stage, i) in stages"
       :key="stage.value"
       type="button"
       class="step"
-      :class="[stateOf(i), { 'is-locked': disabled }]"
+      :class="[stateOf(i), { 'is-locked': disabled, 'is-past': !disabled && isLocked(i) }]"
       :aria-pressed="modelValue === stage.value"
       :data-testid="`stage-${stage.value}`"
-      :disabled="disabled"
-      @click="$emit('update:modelValue', stage.value)"
+      :disabled="isLocked(i)"
+      @click="pick(stage, i)"
     >
       <span class="dot">
         <template v-if="stateOf(i) === 'is-done'">✓</template>
@@ -48,6 +79,26 @@ function stateOf(index) {
       </span>
       <span class="label">{{ stage.label }}</span>
     </button>
+  </div>
+
+  <!-- "Are you sure?" before moving forward -->
+  <div v-if="pending" class="stage-confirm" data-testid="stage-confirm" role="alertdialog" aria-live="polite">
+    <p class="mb-1 fw-semibold">Mark this order as {{ pending.label }}?</p>
+    <p class="small text-muted mb-2">
+      <template v-if="pending.value === 'completed'">
+        This can't be undone. Completed orders can't be cancelled or refunded.
+      </template>
+      <template v-else>
+        Orders can't go back to an earlier step. If the customer gave an email, they'll be notified.
+      </template>
+    </p>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-primary btn-sm" @click="confirm">
+        Yes, mark as {{ pending.label }}
+      </button>
+      <button type="button" class="btn btn-light btn-sm" @click="pending = null">Not yet</button>
+    </div>
+  </div>
   </div>
 </template>
 
@@ -142,6 +193,22 @@ function stateOf(index) {
 .step:focus-visible .dot {
   outline: 2px solid var(--sk-brand);
   outline-offset: 3px;
+}
+
+/* steps already passed: can't go back, but they don't look faded */
+.step.is-past {
+  cursor: default;
+}
+.step.is-past:hover .dot {
+  border-color: var(--sk-brand);
+}
+
+/* "Are you sure?" box */
+.stage-confirm {
+  margin-top: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--sk-radius-sm);
+  background: var(--sk-brand-soft);
 }
 
 /* locked (e.g. cancelled order): can't be clicked */
