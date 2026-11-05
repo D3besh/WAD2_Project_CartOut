@@ -712,13 +712,23 @@ test.describe('Order log: paging and filters', () => {
 // Wrong input is refused
 // ---------------------------------------------------------------------------
 test.describe('Wrong input', () => {
-  test('27. Log order: Save stays disabled until required fields are filled', async ({ page }) => {
+  // Save is never disabled: pressing it with fields missing shows a red banner,
+  // turns the missing fields red, and does NOT send the order.
+  async function ordersCount(page) {
+    return (await (await page.request.get('/api/orders')).json()).length;
+  }
+
+  test('27. Log order: Save with missing fields shows what is missing and saves nothing', async ({ page }) => {
     await page.goto('/orders/new');
     const save = page.getByRole('button', { name: 'Save order' });
+    const banner = page.getByRole('alert');
 
     // Empty form
-    await expect(save).toBeDisabled();
-    await expect(page.getByText(/required fields? left/)).toBeVisible();
+    await save.click();
+    await expect(banner).toContainText('Fill in');
+    await expect(banner).toContainText('Customer name');
+    await expect(page.locator('#customerName')).toHaveClass(/is-invalid/);
+    expect(await ordersCount(page)).toBe(0);
 
     // Fill everything except the due date
     await page.locator('#customerName').fill(uniqueName('Incomplete'));
@@ -726,11 +736,21 @@ test.describe('Wrong input', () => {
     await page.locator('#qty-0').fill('1');
     await page.locator('#price').fill('20');
     await page.locator('#fulfilmentMethod').selectOption('self-collect');
-    await expect(save).toBeDisabled();
-    await expect(page.getByText(/required field left: Due date/)).toBeVisible();
 
+    await save.click();
+    await expect(banner).toContainText('Fill in 1 required field: Due date');
+    await expect(page.locator('#dueAt')).toHaveClass(/is-invalid/);
+    await expect(page.locator('#customerName')).not.toHaveClass(/is-invalid/);
+    expect(await ordersCount(page)).toBe(0);
+
+    // Fill the due date: now it saves
     await page.locator('#dueAt').fill(dateTimeInput(2));
-    await expect(save).toBeEnabled();
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/orders') && r.request().method() === 'POST'),
+      save.click(),
+    ]);
+    expect(response.status(), `saving failed: ${await response.text()}`).toBe(201);
+    expect(await ordersCount(page)).toBe(1);
   });
 
   test('28. Log order: delivery needs an address', async ({ page }) => {
@@ -743,17 +763,25 @@ test.describe('Wrong input', () => {
     await page.locator('#price').fill('20');
     await page.locator('#dueAt').fill(dateTimeInput(2));
     await page.locator('#fulfilmentMethod').selectOption('delivery');
-
     await expect(page.locator('#deliveryAddress')).toBeVisible();
-    await expect(save).toBeDisabled();
-    await expect(page.getByText(/Delivery address/).last()).toBeVisible();
 
+    // No address yet: Save shows the problem and saves nothing
+    await save.click();
+    await expect(page.getByRole('alert')).toContainText('Delivery address');
+    await expect(page.locator('#deliveryAddress')).toHaveClass(/is-invalid/);
+    expect(await ordersCount(page)).toBe(0);
+
+    // With an address it saves
     await page.locator('#deliveryAddress').fill('Blk 123 Bedok North Ave 1, #01-01');
-    await expect(save).toBeEnabled();
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/orders') && r.request().method() === 'POST'),
+      save.click(),
+    ]);
+    expect(response.status(), `saving failed: ${await response.text()}`).toBe(201);
 
     // The server refuses a delivery order without an address too
     const product = (await (await page.request.get('/api/products')).json())[0];
-    const response = await page.request.post('/api/orders', {
+    const refused = await page.request.post('/api/orders', {
       data: {
         customerName: 'No address',
         items: [{ product: product._id, quantity: 1 }],
@@ -763,7 +791,7 @@ test.describe('Wrong input', () => {
         dueAt: new Date(Date.now() + 86_400_000).toISOString(),
       },
     });
-    expect(response.status()).toBe(400);
+    expect(refused.status()).toBe(400);
   });
 
   test('29. a deposit bigger than the price is refused', async ({ page }) => {

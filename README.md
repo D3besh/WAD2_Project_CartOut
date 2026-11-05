@@ -14,7 +14,7 @@ CartOut is a mobile-friendly web app that acts as the administrative backbone ho
 ## Links
 
 - Git repository: https://github.com/D3besh/WAD2_Project_CartOut
-- Presentation video: https://youtu.be/EMcuKukBZO8
+- Presentation video: https://youtu.be/cyFt7KqGBds
 
 ## Demo login
 
