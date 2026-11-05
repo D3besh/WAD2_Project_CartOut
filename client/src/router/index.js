@@ -8,7 +8,6 @@ import OrderLogView from '../views/OrderLogView.vue';
 import OrderDetailView from '../views/OrderDetailView.vue';
 import MaterialsView from '../views/MaterialsView.vue';
 import ProductsView from '../views/ProductsView.vue';
-import ForecastView from '../views/ForecastView.vue';   
 import NotFoundView from '../views/NotFoundView.vue';
 import LoggedOutView from '../views/LoggedOutView.vue';
 import ProfileView from '../views/ProfileView.vue';
@@ -29,7 +28,6 @@ const routes = [
   { path: '/orders/:id', name: 'order-detail', component: OrderDetailView, props: true },
   { path: '/materials', name: 'materials', component: MaterialsView },
   { path: '/products', name: 'products', component: ProductsView },
-  { path: '/forecast', name: 'forecast', component: ForecastView },
   { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView, meta: { public: true } },
 ];
 

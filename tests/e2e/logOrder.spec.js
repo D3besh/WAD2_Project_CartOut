@@ -216,6 +216,8 @@ test.describe('Log order: stock check', () => {
 
     await expect(page.locator('.stock-check.is-short')).toContainText('You can only make 10');
     await expect(page.locator('.stock-check.is-short')).toContainText('E2E Butter');
+    // 11 × 100 g = 1100 g needed, 1000 g in stock → 100 g more
+    await expect(page.locator('.stock-check.is-short')).toContainText('Buy 100 g more E2E Butter');
     await expect(save(page)).toBeEnabled();
   });
 
@@ -233,6 +235,34 @@ test.describe('Log order: stock check', () => {
     const warnings = page.locator('.stock-check.is-short');
     await expect(warnings).toHaveCount(2);
     await expect(warnings.first()).toContainText('after your other items');
+    // Both notes show what the WHOLE order is short of (1100 − 1000 = 100 g), not 100 g each
+    await expect(warnings.nth(0)).toContainText('Buy 100 g more E2E Butter');
+    await expect(warnings.nth(1)).toContainText('Buy 100 g more E2E Butter');
+  });
+
+  test('D4. every material that is short is listed, rounded up', async ({ page }) => {
+    const butter = await createTestMaterial(page, 'E2E Butter', 1000);
+    const sugar = await createTestMaterial(page, 'E2E Sugar', 100);
+    const response = await page.request.post('/api/products', {
+      data: {
+        name: 'E2E Butter sugar cookies',
+        price: 20,
+        recipe: [
+          { material: butter._id, amountPerUnit: 152 }, // 10 × 152 = 1520 g → 520 g more
+          { material: sugar._id, amountPerUnit: 30 },   // 10 × 30  = 300 g  → 200 g more
+        ],
+      },
+    });
+    expect(response.status()).toBe(201);
+    await openLogOrder(page);
+
+    await page.locator('#product-0').selectOption({ label: 'E2E Butter sugar cookies' });
+    await page.locator('#qty-0').fill('10');
+
+    // Sugar runs out first (100 / 30 = 3), so it's named first
+    const warning = page.locator('.stock-check.is-short');
+    await expect(warning).toContainText('You can only make 3');
+    await expect(warning).toContainText('Buy 200 g more E2E Sugar and 520 g more E2E Butter');
   });
 });
 
