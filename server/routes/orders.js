@@ -170,8 +170,18 @@ router.post('/', async (req, res, next) => {
 
 
     // Rules the schema can't express on its own
-    if (dueAt && new Date(dueAt) < new Date()) {
-      return res.status(400).json({ error: "Due date can't be in the past" });
+    // if (dueAt && new Date(dueAt) < new Date()) {
+    //   return res.status(400).json({ error: "Due date can't be in the past" });
+    // }
+    if (dueAt) {
+      const due = new Date(dueAt);
+      if (Number.isNaN(due.getTime())) {
+        return res.status(400).json({ error: 'Due date is not a valid date' });
+      }
+      // The date picker has no seconds, so allow a minute of slack
+      if (due < new Date(Date.now() - 60 * 1000)) {
+        return res.status(400).json({ error: "Due date can't be in the past" });
+      }
     }
     if (fulfilmentMethod === 'delivery' && !deliveryAddress?.trim()) {
       return res.status(400).json({ error: 'Delivery address is required for delivery orders' });
