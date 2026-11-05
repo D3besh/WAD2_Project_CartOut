@@ -254,7 +254,7 @@ onMounted(loadOrder);
 
       <p v-if="error" class="text-danger">{{ error }}</p>
 
-      <!--
+      <!-- for demo
         Bootstrap grid:
           phone (< md)  : every card full width, one column
           md (≥ 768px)  : details (5/12) + trackers & cancellation (7/12), messages underneath in 2 columns

@@ -487,9 +487,7 @@ const autoFillForm = async () => {
       missingFields.value.push('Platform');
     }
 
-    // Items
 
-    // Items
     // Items
     if (data.items?.length > 0) {
       form.items = data.items.map(item => ({
@@ -612,7 +610,7 @@ const autoFillForm = async () => {
   <section data-testid="page-log-order" class="container py-4" style="max-width: 720px">
     <h1 class="mb-4">Log order</h1>
 
-    <!-- Saved / saved-but-short / didn't save. Sticks under the navbar. -->
+    <!-- Action banner component -->
     <ActionBanner :message="banner" @close="banner = null" />
 
     <form @submit.prevent="saveOrder" novalidate>

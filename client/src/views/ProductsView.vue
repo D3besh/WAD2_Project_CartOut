@@ -12,9 +12,7 @@ import { dayForecast } from '../utils/forecast.js';
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
 
-// =====================================================
 // 1. DATA
-// =====================================================
 const products = ref([]);         // all products from the server
 const materials = ref([]);        // all materials (needed for recipes and "can make")
 const banner = ref(null);         // message under the navbar, e.g. { type: 'success', text: 'Brownies added' }
@@ -31,9 +29,7 @@ const editingId = ref(null);      // null = adding, otherwise the id being edite
 const form = ref({});
 const formError = ref('');
 
-// =====================================================
 // 2. LOAD PRODUCTS AND MATERIALS
-// =====================================================
 async function loadData() {
   try {
     let productsResponse = await axios.get('/api/products');
@@ -85,9 +81,7 @@ function getErrorText(error) {
   return error.message;
 }
 
-// =====================================================
 // 3. MERGE PRODUCTS + MATERIALS → "CAN MAKE"
-// =====================================================
 
 // For every product, work out how many can be made.
 // Every option a customer can order gets its own row:
@@ -219,9 +213,7 @@ function unitOf(materialId) {
   return '';
 }
 
-// =====================================================
 // 4. OPEN THE FORM (ADD / EDIT)
-// =====================================================
 function openAddForm() {
   editingId.value = null;
   form.value = {
@@ -269,9 +261,7 @@ function openEditForm(product) {
   showForm.value = true;
 }
 
-// =====================================================
 // 5. ROWS IN THE FORM
-// =====================================================
 
 // Main recipe rows
 function addRecipeRow() {
@@ -297,9 +287,7 @@ function removeExtraRow(variant, index) {
   variant.extras.splice(index, 1);
 }
 
-// =====================================================
 // 6. SAVE / DELETE
-// =====================================================
 
 // Drop rows where no material was chosen or the amount is 0
 function cleanLines(lines) {
@@ -470,9 +458,7 @@ async function deleteProduct() {
 
     <Pager v-model="page" :total="productCards.length" :per-page="PER_PAGE" item-name="products" />
 
-    <!-- ===================================================== -->
     <!-- POP-UP: Add / Edit product                             -->
-    <!-- ===================================================== -->
     <div v-if="showForm" class="modal d-block inv-modal">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
