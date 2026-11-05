@@ -1,25 +1,3 @@
-// "How many of this product can I make with the materials I have now?"
-//
-// STEP 1 — fullRecipe(product, variant)
-//   A variant only lists its EXTRA materials. So first we combine:
-//     main recipe + the variant's extras = everything needed for ONE unit.
-//   If the same material is in both, we add the amounts together.
-//
-//   Example: Matcha Latte, "Oat milk" variant
-//     main recipe:  4 g matcha, 1 bottle
-//     extras:       280 ml oat milk
-//     full recipe:  4 g matcha, 1 bottle, 280 ml oat milk
-//
-// STEP 2 — calculateCanMake(recipe, materials)
-//   For each material in the recipe:  stock ÷ amount needed, rounded down.
-//   The SMALLEST answer is how many you can make.
-//   That material is the "bottleneck" (it runs out first).
-//
-//   Example: 180 g matcha ÷ 4 = 45,  14 bottles ÷ 1 = 14,  1500 ml oat milk ÷ 280 = 5
-//   Smallest = 5 → you can make 5, limited by Oat milk.
-//
-// Level materials (Low / Medium / High) have no number, so they can't be counted.
-// We skip them, but add a warning if one is Low.
 
 // ---------- STEP 1 ----------
 // variant can be null (no variant → just the main recipe)

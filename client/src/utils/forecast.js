@@ -1,8 +1,3 @@
-// Small helpers for SHOWING the forecast.
-// Plain JavaScript only (no Vue), so everything here can be unit-tested with node:test.
-// Used by Home, Materials, Products, the Order log and New order, so the maths is only written once.
-// (The forecast itself is worked out on the server, in server/services/forecast.js.)
-//
 // The server sends every day as text like "2026-10-24".
 import { fullRecipe, calculateCanMake } from './capacity.js';
 

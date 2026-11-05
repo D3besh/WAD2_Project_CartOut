@@ -13,9 +13,8 @@ import { formatDay, formatAmount, restockRowFor, daysBetween } from '../utils/fo
 const route = useRoute();   // the current address (to read ?add=1)
 const router = useRouter(); // to change the address
 
-// =====================================================
+
 // 1. DATA
-// =====================================================
 const materials = ref([]);        // all materials from the server
 const banner = ref(null);         // message under the navbar, e.g. { type: 'success', text: 'Butter added' }
 const search = ref('');           // text typed in the search box
@@ -54,9 +53,8 @@ const panelKey = ref(0);
 // so that material stands out in the "What to buy" list
 const highlightId = ref(null);
 
-// =====================================================
+
 // 2. LOAD MATERIALS FROM THE SERVER
-// =====================================================
 async function loadMaterials() {
   let url = '/api/materials';
 
@@ -133,9 +131,7 @@ function getErrorText(error) {
   return error.message;
 }
 
-// =====================================================
 // 3. COMPUTED VALUES (update automatically)
-// =====================================================
 
 // Only the materials that are low
 const lowMaterials = computed(() => {
@@ -217,9 +213,7 @@ function stockPercent(m) {
   return Math.max(4, Math.min(100, percent)); // keep a sliver visible, never over 100
 }
 
-// =====================================================
 // 4. ADD / EDIT / DELETE
-// =====================================================
 function openAddForm() {
   editingId.value = null;
   form.value = {
@@ -296,9 +290,7 @@ async function deleteMaterial() {
   }
 }
 
-// =====================================================
 // 5. MARK AS RESTOCKED
-// =====================================================
 
 // Called by MaterialCard's $emit('restock', material)
 async function markRestocked(material) {
@@ -433,9 +425,7 @@ async function afterPanelRestock(names) {
       </div>
     </div>
 
-    <!-- ===================================================== -->
     <!-- POP-UP: Add / Edit material                            -->
-    <!-- ===================================================== -->
     <div v-if="showForm" class="modal d-block inv-modal">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
